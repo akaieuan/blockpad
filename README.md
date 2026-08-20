@@ -13,32 +13,35 @@
 
 ## Why this exists
 
-Describing a layout in prose is lossy, and the loss is expensive.
+Figma and Excalidraw are good tools. They are also another tab, another context,
+a lot of clicks, and an account you have to keep — and the genuinely useful tiers
+cost money. None of that is wrong for design work. It is all wrong for the ninety
+seconds where you just need to say *where the boxes go*.
 
-You are in a repo, working with an agent, and you need to say *"filters go in a
-right-side panel, tabs across the top, reset and apply in the footer."* You type
-it. The agent builds something reasonable and wrong. You type a correction. It
-is closer and still wrong. Three rounds later you have spent real tokens, real
-minutes, and real attention reading implementations you are about to throw away.
+Because that is usually the whole problem. You are in a repo, working with an
+agent, and you need to say *"filters go in a right-side panel, tabs across the
+top, reset and apply in the footer."* You type it. The agent builds something
+reasonable and wrong. You correct it. Closer, still wrong. Three rounds later you
+have spent real tokens, real minutes, and real attention reading implementations
+you are about to throw away.
 
 The cost is not the message. It is the **rounds**.
 
-Blockpad is a faster input device for that moment. `Ctrl+Opt+B`, a canvas
-appears over your editor, you drag four boxes, `Cmd+Return`, and the layout
-lands in your agent's input as something precise. No model inside it, no
-approval flow, nothing agent-initiated. It is a drawing tool that speaks
-structure, and the constraint is the product.
+Blockpad is one hotkey and one canvas. `Ctrl+Opt+B`, drag four boxes,
+`Cmd+Return`, paste. No model inside it, no account, no subscription, nothing
+agent-initiated, and it never leaves your machine. It is a faster input device
+for one specific moment, and the constraint is the product.
 
-Two things follow from that, and they are the whole point:
+Two things follow, and they are the point:
 
-**It reduces the cost of being understood.** A sketch is turned into an exact
-scene tree *locally*, with no inference — coordinates, counts, and nesting are
-stated rather than guessed at from a picture. See the numbers below.
+**It reduces the cost of being understood.** The sketch becomes an exact scene
+tree *locally*, with no inference — coordinates, counts and nesting are stated
+rather than guessed from a picture. Numbers below.
 
 **It makes design legible to people who are not designers.** Anyone who can drag
-a rectangle can now specify an interface well enough for an agent to build it.
-That is the accessibility argument, and for internal tools — the ones nobody
-staffs a designer on — it is most of the value.
+a rectangle can specify an interface well enough for an agent to build it. For
+internal tools — the ones nobody staffs a designer on — that is most of the
+value.
 
 Loop target: **six seconds, no mouse travel outside the canvas.**
 
