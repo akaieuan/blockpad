@@ -32,6 +32,7 @@ struct SketchDocument: Codable {
     var zoom: CGFloat = 1
     var theme: String?
     var sketchy: Bool?
+    var snapping: Bool?
 }
 
 /// Canvas contents persist across hide/show and across app restart (§2).
@@ -51,6 +52,8 @@ final class SketchStore: ObservableObject {
     @Published var toast: String?
     @Published var libraryOpen: Bool = false
     @Published var inspectorOpen: Bool = true
+    /// Alignment guides while dragging.
+    @Published var snapping: Bool = true { didSet { scheduleSave() } }
 
     var renderOptions: RenderOptions { RenderOptions(theme: theme, sketchy: sketchy) }
 
@@ -112,7 +115,8 @@ final class SketchStore: ObservableObject {
 
     func save() {
         let doc = SketchDocument(blocks: blocks, frameSize: frameSize,
-                                 pan: pan, zoom: zoom, theme: theme.name, sketchy: sketchy)
+                                 pan: pan, zoom: zoom, theme: theme.name, sketchy: sketchy,
+                                 snapping: snapping)
         do {
             try JSONEncoder().encode(doc).write(to: Self.storeURL, options: .atomic)
         } catch {
@@ -129,5 +133,6 @@ final class SketchStore: ObservableObject {
         zoom = doc.zoom == 0 ? 1 : doc.zoom
         theme = CanvasTheme.all.first { $0.name == doc.theme } ?? .paper
         sketchy = doc.sketchy ?? false
+        snapping = doc.snapping ?? true
     }
 }

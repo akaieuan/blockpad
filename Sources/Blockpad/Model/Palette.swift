@@ -39,6 +39,9 @@ enum Palette {
     }
 
     static let selection = NSColor(srgbRed: 0.353, green: 0.333, blue: 0.855, alpha: 1)
+    /// Alignment guides read as a different system from selection, so they get
+    /// their own hue rather than a lighter tint of it.
+    static let guide = NSColor(srgbRed: 0.910, green: 0.275, blue: 0.486, alpha: 1)
 }
 
 /// Canvas background, switchable (asked for directly, not in the original §4).

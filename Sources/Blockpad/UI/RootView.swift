@@ -6,12 +6,16 @@ private struct Layout {
     let width: CGFloat
 
     var compact: Bool { width < 860 }
-    var showsBadges: Bool { width >= 1000 }
-    var showsCopyLabel: Bool { width >= 780 }
-    var toolSize: CGFloat { width >= 1000 ? 31 : (width >= 860 ? 29 : 27) }
+    var showsActiveLabel: Bool { width >= 900 }
+    var showsCopyLabel: Bool { width >= 700 }
+    var toolSize: CGFloat { width >= 900 ? 33 : (width >= 780 ? 30 : 28) }
     var inspectorWidth: CGFloat { width >= 1000 ? 186 : 168 }
 }
 
+/// Chrome arrangement: tools sit in a dock along the bottom, not an island
+/// across the top. The top edge of a drawing is where you look, so keeping it
+/// clear is worth more than the conventional toolbar position — and it gives
+/// the window a silhouette of its own rather than a borrowed one.
 struct RootView: View {
     @ObservedObject var store: SketchStore
     @AppStorage("payloadMode") private var payloadModeRaw: String = PayloadMode.tree.rawValue
@@ -27,14 +31,10 @@ struct RootView: View {
                 CanvasRepresentable(store: store, onSend: send)
                     .ignoresSafeArea()
 
-                // One row, so the tools and the copy button can never overlap
-                // however narrow the window gets.
-                HStack(alignment: .top, spacing: 10) {
-                    Spacer(minLength: 0)
-                    ToolbarIsland(store: store,
-                                  buttonSize: layout.toolSize,
-                                  showsBadges: layout.showsBadges)
-                    Spacer(minLength: 0)
+                // The top edge carries only the copy action; the traffic lights
+                // own the other corner.
+                HStack {
+                    Spacer()
                     SendIsland(store: store,
                                showsLabel: layout.showsCopyLabel,
                                onSend: send)
@@ -56,12 +56,17 @@ struct RootView: View {
 
                 VStack {
                     Spacer()
-                    HStack {
+                    HStack(alignment: .bottom, spacing: 10) {
+                        Spacer(minLength: 0)
+                        ToolDock(store: store,
+                                 buttonSize: layout.toolSize,
+                                 showsActiveLabel: layout.showsActiveLabel)
+                        Spacer(minLength: 0)
                         BottomControls(store: store, canvas: { CanvasHost.shared })
-                        Spacer()
                     }
                 }
-                .padding(12)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
 
                 if let toast = store.toast {
                     HStack {

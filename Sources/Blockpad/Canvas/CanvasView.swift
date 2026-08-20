@@ -14,6 +14,7 @@ final class CanvasView: NSView {
     private var editingBlockID: UUID?
     private var drag: DragState = .none
     private var isSpaceHeld = false
+    private var guides: [AlignmentGuide] = []
 
     private let gridStep: CGFloat = 8
     private let handleSize: CGFloat = 8
@@ -61,6 +62,12 @@ final class CanvasView: NSView {
     private var visibleDocRect: CGRect {
         CGRect(origin: toDoc(bounds.origin),
                size: CGSize(width: bounds.width / store.zoom, height: bounds.height / store.zoom))
+    }
+
+    /// Grid-snaps the *result* of a move rather than the delta, so dragging a
+    /// block that started off-grid lands it on the grid.
+    private func snapDelta(from origin: CGFloat, delta: CGFloat) -> CGFloat {
+        (((origin + delta) / gridStep).rounded() * gridStep) - origin
     }
 
     private func snap(_ p: CGPoint, disabled: Bool) -> CGPoint {
@@ -118,6 +125,32 @@ final class CanvasView: NSView {
             }
         }
         ctx.restoreGState()
+
+        if !guides.isEmpty {
+            ctx.saveGState()
+            ctx.setStrokeColor(Palette.guide.cgColor)
+            ctx.setLineWidth(1)
+            ctx.setLineDash(phase: 0, lengths: [4, 3])
+            for guide in guides {
+                let a: CGPoint, b: CGPoint
+                if guide.isVertical {
+                    a = toView(CGPoint(x: guide.position, y: guide.start))
+                    b = toView(CGPoint(x: guide.position, y: guide.end))
+                } else {
+                    a = toView(CGPoint(x: guide.start, y: guide.position))
+                    b = toView(CGPoint(x: guide.end, y: guide.position))
+                }
+                // Overshoot a little so the line reads as a guide, not an edge.
+                let pad: CGFloat = 12
+                let from = guide.isVertical ? CGPoint(x: a.x, y: a.y - pad) : CGPoint(x: a.x - pad, y: a.y)
+                let to = guide.isVertical ? CGPoint(x: b.x, y: b.y + pad) : CGPoint(x: b.x + pad, y: b.y)
+                ctx.move(to: from)
+                ctx.addLine(to: to)
+            }
+            ctx.strokePath()
+            ctx.setLineDash(phase: 0, lengths: [])
+            ctx.restoreGState()
+        }
 
         if case .marquee(let start, let current) = drag {
             let r = CGRect(x: min(start.x, current.x), y: min(start.y, current.y),
@@ -275,7 +308,19 @@ final class CanvasView: NSView {
                                       y: start.y + side * (end.y < start.y ? -1 : 1))
                     }
                 }
-                block.rect = CGRect(x: start.x, y: start.y, width: end.x - start.x, height: end.y - start.y)
+                var rect = CGRect(x: start.x, y: start.y, width: end.x - start.x, height: end.y - start.y)
+                if store.snapping, !noSnap, !block.kind.isLinear {
+                    let others = store.blocks.filter { $0.kind != .frame }.map(\.bounds)
+                    let result = Alignment.solve(moving: rect.standardized, others: others,
+                                                 tolerance: 7 / store.zoom)
+                    // Only the dragged corner moves; the anchor stays put.
+                    if let adjust = result.dx { rect.size.width += adjust }
+                    if let adjust = result.dy { rect.size.height += adjust }
+                    guides = result.guides
+                } else {
+                    guides = []
+                }
+                block.rect = rect
             }
             drag = .creating(block)
 
@@ -283,20 +328,38 @@ final class CanvasView: NSView {
             var dx = docPoint.x - origin.x
             var dy = docPoint.y - origin.y
             if constrain { if abs(dx) > abs(dy) { dy = 0 } else { dx = 0 } }
+
+            // The whole selection moves as one rigid body, so solve the offset
+            // once against its union rather than snapping each block separately
+            // — otherwise a multi-select quietly changes its own spacing.
+            let baseUnion = snapshot.filter { store.selection.contains($0.id) }
+                .map(\.bounds).reduce(CGRect.null) { $0.union($1) }
+
+            var alignedX = false
+            var alignedY = false
+            if store.snapping, !noSnap, !baseUnion.isNull {
+                let others = snapshot.filter { !store.selection.contains($0.id) && $0.kind != .frame }
+                    .map(\.bounds)
+                let result = Alignment.solve(moving: baseUnion.offsetBy(dx: dx, dy: dy),
+                                             others: others,
+                                             tolerance: 7 / store.zoom)
+                if let adjust = result.dx { dx += adjust; alignedX = true }
+                if let adjust = result.dy { dy += adjust; alignedY = true }
+                guides = result.guides
+            } else {
+                guides = []
+            }
+
+            // Grid snap only where alignment did not already decide the axis.
+            if !noSnap, !baseUnion.isNull {
+                if !alignedX { dx = snapDelta(from: baseUnion.minX, delta: dx) }
+                if !alignedY { dy = snapDelta(from: baseUnion.minY, delta: dy) }
+            }
+
             var updated = snapshot
             for i in updated.indices where store.selection.contains(updated[i].id) {
-                var moved = snapshot[i].rect.offsetBy(dx: dx, dy: dy)
-                if !noSnap, !snapshot[i].kind.isLinear {
-                    moved.origin = snap(moved.origin, disabled: false)
-                }
-                updated[i].rect = moved
-                if !snapshot[i].points.isEmpty {
-                    let shiftX = moved.origin.x - snapshot[i].rect.origin.x
-                    let shiftY = moved.origin.y - snapshot[i].rect.origin.y
-                    updated[i].points = snapshot[i].points.map {
-                        CGPoint(x: $0.x + shiftX, y: $0.y + shiftY)
-                    }
-                }
+                updated[i].rect = snapshot[i].rect.offsetBy(dx: dx, dy: dy)
+                updated[i].points = snapshot[i].points.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
             }
             store.blocks = updated
 
@@ -386,6 +449,7 @@ final class CanvasView: NSView {
             break
         }
         drag = .none
+        guides = []
         needsDisplay = true
     }
 

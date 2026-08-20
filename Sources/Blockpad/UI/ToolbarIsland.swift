@@ -1,48 +1,5 @@
 import SwiftUI
 
-/// The floating tool island. Replaces the old full-width bar: chrome that sits
-/// on the canvas rather than cutting the window in half keeps the drawing
-/// surface whole and reads as one object.
-struct ToolbarIsland: View {
-    @ObservedObject var store: SketchStore
-    var buttonSize: CGFloat = 31
-    var showsBadges: Bool = true
-
-    var body: some View {
-        HStack(spacing: 3) {
-            ToolButton(symbol: store.toolLocked ? "lock.fill" : "lock.open",
-                       help: store.toolLocked ? "Tool stays active" : "Tool reverts after one shape",
-                       isActive: store.toolLocked,
-                       size: buttonSize) {
-                store.toolLocked.toggle()
-            }
-
-            Divider1px()
-
-            ForEach(ToolSpec.all) { spec in
-                ToolButton(symbol: spec.symbol,
-                           help: "\(spec.label)   \(spec.key.uppercased())",
-                           badge: showsBadges ? spec.digit : "",
-                           isActive: store.tool == spec.tool,
-                           size: buttonSize) {
-                    store.tool = spec.tool
-                }
-            }
-
-            Divider1px()
-
-            ToolButton(symbol: "square.grid.2x2",
-                       help: "Components",
-                       isActive: store.libraryOpen,
-                       size: buttonSize) {
-                store.libraryOpen.toggle()
-            }
-        }
-        .padding(5)
-        .glassSurface()
-    }
-}
-
 /// Copy control, top right. The payload mode lives in the chevron (§5).
 struct SendIsland: View {
     @ObservedObject var store: SketchStore

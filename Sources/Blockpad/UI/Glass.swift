@@ -179,11 +179,62 @@ struct IconSegments<T: Hashable>: View {
     }
 }
 
+/// Icon button whose active state expands to show the tool's name. The morph is
+/// the toolbar's signature: only one button is ever wide, so the bar reads as a
+/// sentence about the current mode rather than a uniform grid of glyphs.
+struct ToolPill: View {
+    let symbol: String
+    let label: String
+    let help: String
+    var isActive: Bool = false
+    var showsLabel: Bool = true
+    var size: CGFloat = 31
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    private var expanded: Bool { isActive && showsLabel }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol)
+                    .font(.system(size: 13.5, weight: .medium))
+                if expanded {
+                    Text(label)
+                        .font(.system(size: 12, weight: .semibold))
+                        .fixedSize()
+                        .transition(.opacity.combined(with: .scale(scale: 0.85, anchor: .leading)))
+                }
+            }
+            .foregroundStyle(isActive ? Color(nsColor: Palette.selection) : .primary.opacity(0.8))
+            .padding(.horizontal, expanded ? 9 : 0)
+            .frame(minWidth: size, minHeight: size)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(background)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .help(help)
+        .animation(.spring(response: 0.3, dampingFraction: 0.82), value: expanded)
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+
+    private var background: Color {
+        if isActive { return Color(nsColor: Palette.selection).opacity(0.15) }
+        if hovering { return Color.primary.opacity(0.07) }
+        return .clear
+    }
+}
+
 struct Divider1px: View {
     var body: some View {
         Rectangle()
             .fill(Color.primary.opacity(0.10))
-            .frame(width: 1, height: 20)
-            .padding(.horizontal, 2)
+            .frame(width: 1, height: 18)
+            .padding(.horizontal, 3)
     }
 }
