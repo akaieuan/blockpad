@@ -5,6 +5,8 @@
 
 **A macOS sketchpad that opens on a hotkey and hands drawings to whatever coding agent you're in.**
 
+<img src="docs/hero.png" width="880" alt="Blockpad: a floating canvas with a layout sketched on it, an inspector rail, and a tool dock">
+
 </div>
 
 ---

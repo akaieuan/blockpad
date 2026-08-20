@@ -132,8 +132,7 @@ struct PropertiesPanel: View {
                 Row(glyph: "square.grid.3x3", label: "Canvas") {
                     Swatches(colors: CanvasTheme.all.map { Color(nsColor: $0.color) },
                              names: CanvasTheme.all.map(\.name),
-                             selected: CanvasTheme.all.firstIndex(of: store.theme) ?? 0,
-                             size: 15) { index in
+                             selected: CanvasTheme.all.firstIndex(of: store.theme) ?? 0) { index in
                         store.theme = CanvasTheme.all[index]
                     }
                 }
@@ -236,6 +235,8 @@ private struct Row<Content: View>: View {
                 Text(label)
                     .font(.system(size: 10.5, weight: .medium))
                     .foregroundStyle(.primary.opacity(0.62))
+                    .lineLimit(1)
+                    .fixedSize()
                 Spacer(minLength: 6)
                 if let trailingText {
                     Text(trailingText)
@@ -260,11 +261,11 @@ private struct Swatches: View {
     let colors: [Color?]
     let names: [String]
     let selected: Int
-    var size: CGFloat = 14
+    var size: CGFloat = 13
     let action: (Int) -> Void
 
     var body: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 4) {
             ForEach(colors.indices, id: \.self) { index in
                 SwatchButton(color: colors[index],
                              help: names[index],

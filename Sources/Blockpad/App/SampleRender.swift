@@ -70,8 +70,10 @@ extension SampleRender {
 
         let doc = SketchDocument(blocks: sampleScene(),
                                  frameSize: FramePreset.all[0].size,
-                                 pan: CGPoint(x: 150, y: 96),
-                                 zoom: 0.52,
+                                 // Centres the 1440x900 frame in a ~1180x740
+                                 // window, clear of the inspector rail.
+                                 pan: CGPoint(x: 248, y: 118),
+                                 zoom: 0.60,
                                  theme: "Paper",
                                  sketchy: false,
                                  snapping: true)
