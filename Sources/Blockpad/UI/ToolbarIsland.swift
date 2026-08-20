@@ -19,16 +19,16 @@ struct SendIsland: View {
                         .font(.system(size: 12, weight: .medium))
                     if showsLabel {
                         Text("Copy")
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .font(Token.Text.header)
                     }
                 }
                 .padding(.horizontal, showsLabel ? 10 : 7)
                 .frame(height: 30)
                 .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(hovering ? Color.primary.opacity(0.07) : .clear)
+                    RoundedRectangle(cornerRadius: Token.Radius.control, style: .continuous)
+                        .fill(hovering ? Color.primary.opacity(Token.Ink.hover) : .clear)
                 )
-                .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: Token.Radius.control, style: .continuous))
             }
             .buttonStyle(.plain)
             .onHover { hovering = $0 }
@@ -58,7 +58,7 @@ struct SendIsland: View {
             .frame(width: 18, height: 30)
             .help("Payload mode — currently \(mode.label)")
         }
-        .padding(5)
+        .padding(Token.Space.md - 1)
         .glassSurface()
     }
 }
@@ -81,7 +81,7 @@ struct BottomControls: View {
                     canvas()?.setZoom(1); refresh()
                 } label: {
                     Text(zoomLabel)
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .font(Token.Text.label)
                         .monospacedDigit()
                         .frame(width: 46, height: 28)
                         .contentShape(Rectangle())
@@ -93,8 +93,8 @@ struct BottomControls: View {
                     canvas()?.setZoom(store.zoom * 1.25); refresh()
                 }
             }
-            .padding(4)
-            .glassSurface(cornerRadius: 11)
+            .padding(Token.Space.sm)
+            .glassSurface(cornerRadius: Token.Radius.group + 2)
 
             HStack(spacing: 1) {
                 ToolButton(symbol: "arrow.uturn.backward", help: "Undo   ⌘Z", size: 28) {
@@ -107,8 +107,8 @@ struct BottomControls: View {
                     canvas()?.zoomToFit(); refresh()
                 }
             }
-            .padding(4)
-            .glassSurface(cornerRadius: 11)
+            .padding(Token.Space.sm)
+            .glassSurface(cornerRadius: Token.Radius.group + 2)
         }
         .onAppear(perform: refresh)
         .onReceive(Timer.publish(every: 0.25, on: .main, in: .common).autoconnect()) { _ in

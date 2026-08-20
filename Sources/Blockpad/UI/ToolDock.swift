@@ -26,7 +26,7 @@ struct ToolDock: View {
     }
 
     var body: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: Token.Space.xs) {
             pill(spec("select"))
             pill(spec("hand"))
 
@@ -56,8 +56,8 @@ struct ToolDock: View {
             }
             canvasMenu
         }
-        .padding(6)
-        .glassSurface(cornerRadius: 16)
+        .padding(Token.Space.md)
+        .glassSurface(cornerRadius: Token.Radius.dock)
     }
 
     private func pill(_ spec: ToolSpec) -> some View {
@@ -121,8 +121,8 @@ struct ToolDock: View {
             Button("Clear Canvas") { CanvasHost.shared?.clearAll() }
         } label: {
             Image(systemName: "circle.lefthalf.filled")
-                .font(.system(size: 13.5, weight: .medium))
-                .foregroundStyle(.primary.opacity(0.8))
+                .font(.system(size: Token.Size.glyph, weight: .medium))
+                .foregroundStyle(.primary.opacity(Token.Ink.primary))
                 .frame(width: buttonSize, height: buttonSize)
                 .contentShape(Rectangle())
         }
@@ -180,7 +180,7 @@ private struct ToolGroupButton: View {
             } label: {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 7, weight: .black))
-                    .foregroundStyle(.primary.opacity(hovering || isActive ? 0.55 : 0.25))
+                    .foregroundStyle(.primary.opacity(hovering || isActive ? Token.Ink.secondary : Token.Ink.tertiary))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

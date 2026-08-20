@@ -9,7 +9,7 @@ private struct Layout {
     var showsActiveLabel: Bool { width >= 900 }
     var showsCopyLabel: Bool { width >= 700 }
     var toolSize: CGFloat { width >= 900 ? 33 : (width >= 780 ? 30 : 28) }
-    var inspectorWidth: CGFloat { width >= 1000 ? 186 : 168 }
+    var inspectorWidth: CGFloat { width >= 1000 ? 190 : 172 }
 }
 
 /// Chrome arrangement: tools sit in a dock along the bottom, not an island
@@ -42,12 +42,14 @@ struct RootView: View {
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
 
-                inspectorColumn(layout)
+                inspectorColumn(layout, availableRailHeight: geometry.size.height - 54 - 44 - 88)
 
                 if store.libraryOpen {
                     HStack {
                         Spacer()
-                        LibraryPanel(store: store, canvas: { CanvasHost.shared })
+                        LibraryPanel(store: store,
+                                     maxHeight: max(220, geometry.size.height - 150),
+                                     canvas: { CanvasHost.shared })
                             .padding(.trailing, 12)
                             .padding(.top, 58)
                             .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
@@ -82,11 +84,10 @@ struct RootView: View {
                     .transition(.opacity.combined(with: .move(edge: .top)))
                 }
             }
-            // Collapse on the way down, restore on the way back up. onAppear
-            // matters as much as onChange: the panel is usually restored at a
-            // remembered size, so the first layout is the one that counts.
-            .onAppear { store.inspectorOpen = !layout.compact }
-            .onChange(of: layout.compact) { _, isCompact in
+            // Collapse on the way down, restore on the way back up. `initial`
+            // matters: the panel restores a remembered frame after first layout,
+            // so an onAppear check would decide against the wrong width.
+            .onChange(of: layout.compact, initial: true) { _, isCompact in
                 store.inspectorOpen = !isCompact
             }
         }
@@ -96,12 +97,15 @@ struct RootView: View {
     }
 
     /// Sits under the traffic lights, which own the top-left corner.
+    /// `availableRailHeight` is what stops the rail growing past the dock — it
+    /// scrolls internally instead of spilling out of its own glass.
     @ViewBuilder
-    private func inspectorColumn(_ layout: Layout) -> some View {
+    private func inspectorColumn(_ layout: Layout, availableRailHeight: CGFloat) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if store.inspectorOpen {
                 PropertiesPanel(store: store,
                                 width: layout.inspectorWidth,
+                                maxHeight: max(180, availableRailHeight),
                                 canvas: { CanvasHost.shared })
                     .transition(.opacity.combined(with: .move(edge: .leading)))
             }
