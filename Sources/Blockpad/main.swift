@@ -14,6 +14,12 @@ if let index = arguments.firstIndex(of: "--render-icon") {
     exit(0)
 }
 
+if let index = arguments.firstIndex(of: "--render-logo") {
+    let output = index + 1 < arguments.count ? arguments[index + 1] : "./docs/logo"
+    IconRender.runLogo(outputDirectory: output)
+    exit(0)
+}
+
 // Loads a known scene into the real store, so documentation screenshots show
 // the app doing its job rather than an empty canvas.
 if arguments.contains("--seed-demo") {

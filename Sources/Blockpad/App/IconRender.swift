@@ -31,6 +31,79 @@ enum IconRender {
         print("wrote \(variants.count) icon sizes to \(dir.path)")
     }
 
+    /// Oversized masters for the website and press use. Kept out of the
+    /// .iconset, which rejects any filename outside Apple's fixed set.
+    static func runLogo(outputDirectory: String) {
+        let dir = URL(fileURLWithPath: outputDirectory)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        for size in [512, 1024, 2048] {
+            guard let data = png(size: size) else { continue }
+            try? data.write(to: dir.appendingPathComponent("logo-\(size).png"))
+        }
+        try? svg().data(using: .utf8)?.write(to: dir.appendingPathComponent("logo.svg"))
+        print("wrote logo masters to \(dir.path)")
+    }
+
+
+    /// Vector master. Derived from the same ratios as `draw`, so the two cannot
+    /// disagree — the numbers below are those ratios evaluated at 1024.
+    static func svg() -> String {
+        let s: CGFloat = 1024
+        let inset = s * 0.094
+        let card = CGRect(x: inset, y: inset, width: s - inset * 2, height: s - inset * 2)
+        let radius = card.width * 0.2237
+        let pad = card.width * 0.175
+        let content = card.insetBy(dx: pad, dy: pad)
+        let gap = content.width * 0.075
+        let leftWidth = content.width * 0.44
+        let rightX = content.minX + leftWidth + gap
+        let rightWidth = content.maxX - rightX
+        let rowHeight = (content.height - gap) / 2
+        let blockRadius = content.width * 0.055
+
+        func hex(_ color: NSColor) -> String {
+            guard let rgb = color.usingColorSpace(.sRGB) else { return "#000000" }
+            return String(format: "#%02X%02X%02X",
+                          Int((rgb.redComponent * 255).rounded()),
+                          Int((rgb.greenComponent * 255).rounded()),
+                          Int((rgb.blueComponent * 255).rounded()))
+        }
+
+        func rect(_ r: CGRect, _ color: NSColor) -> String {
+            String(format: """
+                  <rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" rx="%.2f" ry="%.2f" fill="%@"/>
+            """, r.minX, r.minY, r.width, r.height, blockRadius, blockRadius, hex(color))
+        }
+
+        // SVG's y axis runs downward, so the stacked pair is emitted top-first.
+        let blocks = [
+            rect(CGRect(x: content.minX, y: content.minY, width: leftWidth, height: content.height),
+                 Palette.color(1)),
+            rect(CGRect(x: rightX, y: content.minY, width: rightWidth, height: rowHeight),
+                 Palette.color(2)),
+            rect(CGRect(x: rightX, y: content.minY + rowHeight + gap, width: rightWidth, height: rowHeight),
+                 Palette.color(4))
+        ].joined(separator: "\n")
+
+        return String(format: """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+          <title>Blockpad</title>
+          <defs>
+            <filter id="shadow" x="-20%%" y="-20%%" width="140%%" height="140%%">
+              <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000000" flood-opacity="0.22"/>
+            </filter>
+          </defs>
+          <rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" rx="%.2f" ry="%.2f"
+                fill="#FFFFFF" filter="url(#shadow)"/>
+          <rect x="%.2f" y="%.2f" width="%.2f" height="%.2f" rx="%.2f" ry="%.2f"
+                fill="none" stroke="#000000" stroke-opacity="0.07" stroke-width="4"/>
+        %@
+        </svg>
+        """, card.minX, card.minY, card.width, card.height, radius, radius,
+             card.minX, card.minY, card.width, card.height, radius, radius,
+             blocks)
+    }
+
     static func png(size: Int) -> Data? {
         guard let rep = NSBitmapImageRep(
             bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size,

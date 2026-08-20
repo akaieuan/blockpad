@@ -5,6 +5,10 @@
 
 **A macOS sketchpad that opens on a hotkey and hands drawings to whatever coding agent you're in.**
 
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+![Platform: macOS 14+](https://img.shields.io/badge/platform-macOS%2014%2B-lightgrey.svg)
+![Swift 6](https://img.shields.io/badge/swift-6-orange.svg)
+
 <img src="docs/hero.png" width="880" alt="Blockpad: a floating canvas with a layout sketched on it, an inspector rail, and a tool dock">
 
 </div>
@@ -223,6 +227,14 @@ riskiest milestone and the one the whole idea rests on.
 
 See [PLAN.md](PLAN.md) for the full design, the open questions, and the
 reasoning behind each decision.
+
+---
+
+## Licence
+
+MIT. Fork it, ship it, sell it, take the tree format and build something better
+with it — no permission needed and no attribution beyond keeping the notice. See
+[LICENSE](LICENSE).
 
 ---
 
