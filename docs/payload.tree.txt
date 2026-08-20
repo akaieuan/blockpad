@@ -1,0 +1,11 @@
+Frame 1440x900  "Desktop"
+  Box 480x900  @right-full-height  [slate]
+    Box 136x40  @left-top  "All"
+    Box 136x40  @top  "Active"
+    Box 136x40  @top  "Archived"
+    Box 424x64  ×6  @left
+      Box 24x24  @left  [sage]
+    Box 200x56  @left-bottom  "Reset"  [slate]
+    Box 200x56  @bottom  "Apply"  [dusty red]
+  Text  @left-top  "main content unchanged"  [slate]
+  Text  @left  "panel becomes bottom drawer under 768"  [amber]

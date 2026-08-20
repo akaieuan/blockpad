@@ -17,6 +17,7 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN/Blockpad" "$APP/Contents/MacOS/Blockpad"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+cp "$ROOT/Resources/Blockpad.icns" "$APP/Contents/Resources/Blockpad.icns"
 
 # Ad-hoc signature is enough to run locally. Note it changes on every rebuild,
 # so once M1 needs Accessibility the permission will reset each build until the

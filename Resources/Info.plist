@@ -10,6 +10,8 @@
 	<string>studio.ubik.blockpad</string>
 	<key>CFBundleExecutable</key>
 	<string>Blockpad</string>
+	<key>CFBundleIconFile</key>
+	<string>Blockpad</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

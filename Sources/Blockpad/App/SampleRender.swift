@@ -58,3 +58,28 @@ enum SampleRender {
         return blocks
     }
 }
+
+extension SampleRender {
+    /// Writes the §5 example into the live store so a freshly launched app has
+    /// something worth photographing.
+    static func seedDemoScene() {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Blockpad", isDirectory: true)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        let url = base.appendingPathComponent("scene.json")
+
+        let doc = SketchDocument(blocks: sampleScene(),
+                                 frameSize: FramePreset.all[0].size,
+                                 pan: CGPoint(x: 150, y: 96),
+                                 zoom: 0.52,
+                                 theme: "Paper",
+                                 sketchy: false,
+                                 snapping: true)
+        do {
+            try JSONEncoder().encode(doc).write(to: url, options: .atomic)
+            print("seeded \(url.path)")
+        } catch {
+            print("seed failed: \(error)")
+        }
+    }
+}
