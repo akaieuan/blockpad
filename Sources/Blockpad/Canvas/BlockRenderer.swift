@@ -1,49 +1,55 @@
 import AppKit
 import CoreGraphics
 
-/// Draws the scene. Shared by the on-screen canvas and the PNG exporter so what
-/// you send is exactly what you drew.
+/// Crisp by default, sketchy on request.
+///
+/// §4 argued roughness signals provisional, and that a crisp rectangle invites
+/// the model to treat proportions as exact. That risk is covered elsewhere now:
+/// the tree carries exact coordinates and counts, so precision is stated rather
+/// than inferred from the picture. The sketch renderer stays behind a toggle.
+struct RenderOptions {
+    var theme: CanvasTheme = .paper
+    var sketchy: Bool = false
+}
+
 enum BlockRenderer {
 
-    static func canvasFont(size: CGFloat, weight: NSFont.Weight = .medium) -> NSFont {
-        if let rounded = NSFont.systemFont(ofSize: size, weight: weight)
-            .fontDescriptor.withDesign(.rounded)
-            .flatMap({ NSFont(descriptor: $0, size: size) }) {
-            return rounded
-        }
-        return NSFont.systemFont(ofSize: size, weight: weight)
+    static let cornerRadius: CGFloat = 10
+
+    /// SF Pro, not rounded: rounded reads friendly-informal, which fights the
+    /// crisp direction.
+    static func canvasFont(size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
+        NSFont.systemFont(ofSize: size, weight: weight)
     }
 
     static func fontSize(forStroke index: Int) -> CGFloat {
         switch index {
         case 0: return 13
-        case 2: return 22
-        default: return 16
+        case 2: return 21
+        default: return 15
         }
     }
 
     static func measure(_ text: String, strokeIndex: Int) -> CGSize {
         let font = canvasFont(size: fontSize(forStroke: strokeIndex))
-        let attrs: [NSAttributedString.Key: Any] = [.font: font]
         let bounds = (text as NSString).boundingRect(
             with: CGSize(width: 4000, height: 4000),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
-            attributes: attrs)
-        return CGSize(width: max(24, ceil(bounds.width) + 4), height: max(font.pointSize * 1.35, ceil(bounds.height)))
+            attributes: [.font: font])
+        return CGSize(width: max(24, ceil(bounds.width) + 4),
+                      height: max(font.pointSize * 1.35, ceil(bounds.height)))
     }
 
-    // MARK: - Scene
+    // MARK: - Background
 
-    /// Draws the paper and dot grid in *document* space for the given visible rect.
-    static func drawBackground(in ctx: CGContext, visibleDocRect: CGRect, zoom: CGFloat) {
-        ctx.setFillColor(Palette.paper.cgColor)
+    static func drawBackground(in ctx: CGContext, visibleDocRect: CGRect, zoom: CGFloat, theme: CanvasTheme) {
+        ctx.setFillColor(theme.color.cgColor)
         ctx.fill(visibleDocRect)
 
-        // Grid disappears when zoomed out or it turns into grey mush.
         guard zoom > 0.6 else { return }
         let spacing: CGFloat = 8
         let dot: CGFloat = 1 / zoom
-        ctx.setFillColor(Palette.grid.cgColor)
+        ctx.setFillColor(theme.gridColor.cgColor)
         var y = (visibleDocRect.minY / spacing).rounded(.down) * spacing
         while y < visibleDocRect.maxY {
             var x = (visibleDocRect.minX / spacing).rounded(.down) * spacing
@@ -55,98 +61,172 @@ enum BlockRenderer {
         }
     }
 
-    static func draw(_ block: Block, in ctx: CGContext, zoom: CGFloat) {
-        switch block.kind {
-        case .frame:   drawFrame(block, in: ctx, zoom: zoom)
-        case .box:     drawBox(block, in: ctx, zoom: zoom)
-        case .text:    drawText(block, in: ctx)
-        case .redact:  drawRedact(block, in: ctx)
-        case .arrow:   drawArrow(block, in: ctx)
-        case .callout: drawBox(block, in: ctx, zoom: zoom)
-        case .pen:     drawPen(block, in: ctx)
+    // MARK: - Blocks
+
+    static func draw(_ block: Block, in ctx: CGContext, zoom: CGFloat, options: RenderOptions) {
+        ctx.saveGState()
+        if block.opacity < 1 {
+            ctx.setAlpha(CGFloat(block.opacity))
+            ctx.beginTransparencyLayer(auxiliaryInfo: nil)
         }
+
+        switch block.kind {
+        case .frame:  drawFrame(block, in: ctx, options: options)
+        case .text:   drawText(block, in: ctx, options: options)
+        case .redact: drawRedact(block, in: ctx)
+        case .arrow, .line: drawLinear(block, in: ctx, options: options)
+        case .pen:    drawPen(block, in: ctx, options: options)
+        case .box, .ellipse, .diamond: drawShape(block, in: ctx, options: options)
+        }
+
+        if block.opacity < 1 { ctx.endTransparencyLayer() }
+        ctx.restoreGState()
     }
 
-    // MARK: - Kinds
-
     /// Frames cast a soft drop shadow so they read as sheets on a desk (§4).
-    private static func drawFrame(_ block: Block, in ctx: CGContext, zoom: CGFloat) {
+    private static func drawFrame(_ block: Block, in ctx: CGContext, options: RenderOptions) {
         let r = block.rect.standardized
         guard r.width > 1, r.height > 1 else { return }
+        let theme = options.theme
 
         ctx.saveGState()
-        ctx.setShadow(offset: CGSize(width: 0, height: 3),
-                      blur: 14,
-                      color: NSColor.black.withAlphaComponent(0.13).cgColor)
-        ctx.setFillColor(Palette.sheet.cgColor)
+        if !theme.isDark {
+            ctx.setShadow(offset: CGSize(width: 0, height: 4), blur: 18,
+                          color: NSColor.black.withAlphaComponent(0.12).cgColor)
+        }
+        ctx.setFillColor(theme.sheetColor.cgColor)
         ctx.fill(r)
         ctx.restoreGState()
 
-        var rough = Rough(seed: block.seed, roughness: 0.7)
-        let path = rough.rectangle(r)
         ctx.saveGState()
-        ctx.addPath(path)
-        ctx.setStrokeColor(NSColor(srgbRed: 0.169, green: 0.165, blue: 0.157, alpha: 0.30).cgColor)
+        if options.sketchy {
+            var rough = Rough(seed: block.seed, roughness: 0.7)
+            ctx.addPath(rough.rectangle(r))
+        } else {
+            ctx.addPath(CGPath(rect: r, transform: nil))
+        }
+        ctx.setStrokeColor(theme.frameStroke.cgColor)
         ctx.setLineWidth(1.0)
-        ctx.setLineCap(.round)
         ctx.strokePath()
         ctx.restoreGState()
 
-        // Label sits above the sheet, like an artboard name.
         let name = block.text.isEmpty ? "\(Int(r.width))×\(Int(r.height))" : block.text
-        let font = canvasFont(size: 11, weight: .semibold)
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .foregroundColor: NSColor(srgbRed: 0.169, green: 0.165, blue: 0.157, alpha: 0.45)
-        ]
-        drawString(name, at: CGPoint(x: r.minX + 1, y: r.minY - font.pointSize - 6), attrs: attrs, in: ctx)
+        let font = canvasFont(size: 11, weight: .medium)
+        drawString(name, at: CGPoint(x: r.minX + 1, y: r.minY - font.pointSize - 7),
+                   attrs: [.font: font, .foregroundColor: theme.frameStroke], in: ctx)
     }
 
-    private static func drawBox(_ block: Block, in ctx: CGContext, zoom: CGFloat) {
+    private static func drawShape(_ block: Block, in ctx: CGContext, options: RenderOptions) {
         let r = block.rect.standardized
         guard r.width > 1, r.height > 1 else { return }
-        let color = Palette.color(block.colorIndex)
+        let color = options.theme.inkAdjusted(Palette.color(block.colorIndex), index: block.colorIndex)
 
         var rough = Rough(seed: block.seed)
-        let path = rough.rectangle(r)
+        let strokePath: CGPath
+        if options.sketchy {
+            switch block.kind {
+            case .ellipse: strokePath = rough.ellipse(r)
+            case .diamond: strokePath = rough.diamond(r)
+            default:
+                strokePath = block.corner == .round
+                    ? rough.roundedRectangle(r, radius: min(cornerRadius, min(r.width, r.height) * 0.25))
+                    : rough.rectangle(r)
+            }
+        } else {
+            strokePath = smoothPath(for: block, rect: r)
+        }
+
+        drawFill(block, in: ctx, rect: r, rough: &rough, options: options)
 
         ctx.saveGState()
-        ctx.addPath(path)
-        ctx.setFillColor(color.withAlphaComponent(0.05).cgColor)
-        ctx.fillPath(using: .winding)
-        ctx.restoreGState()
-
-        ctx.saveGState()
-        ctx.addPath(path)
+        ctx.addPath(strokePath)
         ctx.setStrokeColor(color.cgColor)
         ctx.setLineWidth(StrokeWeight.width(block.strokeIndex))
-        ctx.setLineCap(.round)
-        ctx.setLineJoin(.round)
+        ctx.setLineCap(options.sketchy ? .round : .butt)
+        ctx.setLineJoin(options.sketchy ? .round : .miter)
         ctx.strokePath()
         ctx.restoreGState()
 
         guard !block.text.isEmpty else { return }
-        let font = canvasFont(size: fontSize(forStroke: block.strokeIndex))
         let para = NSMutableParagraphStyle()
         para.alignment = .center
         para.lineBreakMode = .byTruncatingTail
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: font, .foregroundColor: color, .paragraphStyle: para
-        ]
         let size = measure(block.text, strokeIndex: block.strokeIndex)
-        let box = CGRect(x: r.minX + 4,
-                         y: r.midY - size.height / 2,
-                         width: max(1, r.width - 8),
-                         height: size.height)
-        drawString(block.text, in: box, attrs: attrs, in: ctx)
+        drawString(block.text,
+                   in: CGRect(x: r.minX + 6, y: r.midY - size.height / 2,
+                              width: max(1, r.width - 12), height: size.height),
+                   attrs: [.font: canvasFont(size: fontSize(forStroke: block.strokeIndex)),
+                           .foregroundColor: color, .paragraphStyle: para],
+                   in: ctx)
     }
 
-    private static func drawText(_ block: Block, in ctx: CGContext) {
+    /// Fill is clipped to the smooth shape even in sketch mode: clipping to the
+    /// rough path leaks, because its double-stroke subpaths overlap and the
+    /// winding rule punches holes.
+    private static func drawFill(_ block: Block, in ctx: CGContext, rect r: CGRect,
+                                 rough: inout Rough, options: RenderOptions) {
+        guard block.fillStyle != .none, let fill = Palette.fill(block.fillIndex) else { return }
+
+        ctx.saveGState()
+        ctx.addPath(smoothPath(for: block, rect: r))
+        ctx.clip()
+
+        switch block.fillStyle {
+        case .solid:
+            ctx.setFillColor(fill.cgColor)
+            ctx.fill(r)
+        case .hachure:
+            let gap = 7 + StrokeWeight.width(block.strokeIndex) * 1.5
+            if options.sketchy {
+                ctx.addPath(rough.hachure(r, gap: gap))
+            } else {
+                let path = CGMutablePath()
+                var x = r.minX - r.height
+                while x < r.maxX + r.height {
+                    path.move(to: CGPoint(x: x, y: r.minY))
+                    path.addLine(to: CGPoint(x: x + r.height, y: r.maxY))
+                    x += gap
+                }
+                ctx.addPath(path)
+            }
+            ctx.setStrokeColor(fill.blended(withFraction: 0.18, of: .black)?.cgColor ?? fill.cgColor)
+            ctx.setLineWidth(max(1.2, StrokeWeight.width(block.strokeIndex) * 0.75))
+            ctx.strokePath()
+        case .none:
+            break
+        }
+        ctx.restoreGState()
+    }
+
+    static func smoothPath(for block: Block, rect r: CGRect) -> CGPath {
+        switch block.kind {
+        case .ellipse:
+            return CGPath(ellipseIn: r, transform: nil)
+        case .diamond:
+            let p = CGMutablePath()
+            p.move(to: CGPoint(x: r.midX, y: r.minY))
+            p.addLine(to: CGPoint(x: r.maxX, y: r.midY))
+            p.addLine(to: CGPoint(x: r.midX, y: r.maxY))
+            p.addLine(to: CGPoint(x: r.minX, y: r.midY))
+            p.closeSubpath()
+            return p
+        default:
+            // Proportional, not absolute: a flat 10pt radius turns a 24pt
+            // checkbox into a circle.
+            let radius = min(cornerRadius, min(r.width, r.height) * 0.25)
+            return block.corner == .round
+                ? CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)
+                : CGPath(rect: r, transform: nil)
+        }
+    }
+
+    private static func drawText(_ block: Block, in ctx: CGContext, options: RenderOptions) {
         guard !block.text.isEmpty else { return }
-        let color = Palette.color(block.colorIndex)
-        let font = canvasFont(size: fontSize(forStroke: block.strokeIndex))
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-        drawString(block.text, in: block.rect.standardized, attrs: attrs, in: ctx)
+        let color = options.theme.inkAdjusted(Palette.color(block.colorIndex), index: block.colorIndex)
+        drawString(block.text, in: block.rect.standardized,
+                   attrs: [.font: canvasFont(size: fontSize(forStroke: block.strokeIndex)),
+                           .foregroundColor: color],
+                   in: ctx)
     }
 
     private static func drawRedact(_ block: Block, in ctx: CGContext) {
@@ -156,37 +236,49 @@ enum BlockRenderer {
         ctx.restoreGState()
     }
 
-    private static func drawArrow(_ block: Block, in ctx: CGContext) {
-        let r = block.rect
-        let p1 = CGPoint(x: r.minX, y: r.minY)
-        let p2 = CGPoint(x: r.maxX, y: r.maxY)
-        let color = Palette.color(block.colorIndex)
-        var rough = Rough(seed: block.seed)
-        let path = rough.lineSegment(p1, p2)
+    /// Arrows and lines run corner to corner of their (unstandardized) rect, so
+    /// the drag direction is preserved and the head lands where you released.
+    private static func drawLinear(_ block: Block, in ctx: CGContext, options: RenderOptions) {
+        let p1 = block.rect.origin
+        let p2 = CGPoint(x: block.rect.maxX, y: block.rect.maxY)
+        guard hypot(p2.x - p1.x, p2.y - p1.y) > 1 else { return }
+        let color = options.theme.inkAdjusted(Palette.color(block.colorIndex), index: block.colorIndex)
 
         ctx.saveGState()
-        ctx.addPath(path)
         ctx.setStrokeColor(color.cgColor)
         ctx.setLineWidth(StrokeWeight.width(block.strokeIndex))
         ctx.setLineCap(.round)
+        ctx.setLineJoin(.round)
+
+        if options.sketchy {
+            var rough = Rough(seed: block.seed)
+            ctx.addPath(rough.lineSegment(p1, p2))
+        } else {
+            let path = CGMutablePath()
+            path.move(to: p1)
+            path.addLine(to: p2)
+            ctx.addPath(path)
+        }
         ctx.strokePath()
 
-        let angle = atan2(p2.y - p1.y, p2.x - p1.x)
-        let headLen: CGFloat = 12 + StrokeWeight.width(block.strokeIndex) * 2
-        let head = CGMutablePath()
-        for delta in [CGFloat.pi * 0.82, -CGFloat.pi * 0.82] {
-            head.move(to: p2)
-            head.addLine(to: CGPoint(x: p2.x + cos(angle + delta) * headLen,
-                                     y: p2.y + sin(angle + delta) * headLen))
+        if block.kind == .arrow {
+            let angle = atan2(p2.y - p1.y, p2.x - p1.x)
+            let headLength = 10 + StrokeWeight.width(block.strokeIndex) * 2.2
+            let head = CGMutablePath()
+            for spread in [CGFloat.pi * 0.85, -CGFloat.pi * 0.85] {
+                head.move(to: p2)
+                head.addLine(to: CGPoint(x: p2.x + cos(angle + spread) * headLength,
+                                         y: p2.y + sin(angle + spread) * headLength))
+            }
+            ctx.addPath(head)
+            ctx.strokePath()
         }
-        ctx.addPath(head)
-        ctx.strokePath()
         ctx.restoreGState()
     }
 
-    private static func drawPen(_ block: Block, in ctx: CGContext) {
+    private static func drawPen(_ block: Block, in ctx: CGContext, options: RenderOptions) {
         guard block.points.count > 1 else { return }
-        let color = Palette.color(block.colorIndex)
+        let color = options.theme.inkAdjusted(Palette.color(block.colorIndex), index: block.colorIndex)
         let path = CGMutablePath()
         path.move(to: block.points[0])
         for i in 1..<block.points.count {
@@ -207,25 +299,20 @@ enum BlockRenderer {
     // MARK: - Text helpers
 
     /// AppKit string drawing needs a current NSGraphicsContext, and the canvas
-    /// view is flipped, so wrap both here rather than at every call site.
+    /// is flipped, so wrap both here rather than at every call site.
     private static func drawString(_ s: String, at point: CGPoint, attrs: [NSAttributedString.Key: Any], in ctx: CGContext) {
-        withFlippedContext(ctx) {
-            (s as NSString).draw(at: point, withAttributes: attrs)
-        }
+        withFlippedContext(ctx) { (s as NSString).draw(at: point, withAttributes: attrs) }
     }
 
     private static func drawString(_ s: String, in rect: CGRect, attrs: [NSAttributedString.Key: Any], in ctx: CGContext) {
         withFlippedContext(ctx) {
-            (s as NSString).draw(with: rect,
-                                 options: [.usesLineFragmentOrigin, .usesFontLeading],
-                                 attributes: attrs)
+            (s as NSString).draw(with: rect, options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attrs)
         }
     }
 
     private static func withFlippedContext(_ ctx: CGContext, _ body: () -> Void) {
         let previous = NSGraphicsContext.current
-        let gc = NSGraphicsContext(cgContext: ctx, flipped: true)
-        NSGraphicsContext.current = gc
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: true)
         body()
         NSGraphicsContext.current = previous
     }

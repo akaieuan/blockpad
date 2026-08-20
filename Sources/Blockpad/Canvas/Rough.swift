@@ -66,8 +66,7 @@ struct Rough {
 
         var off = maxRandomnessOffset
         if off * off * 100 > lengthSq { off = length / 10 }
-        let halfOff = off / 2
-        let amount = overlay ? halfOff : off
+        let amount = overlay ? off / 2 : off
 
         let divergePoint = 0.2 + rng.unit() * 0.2
         var midDispX = bowing * maxRandomnessOffset * dy / 200
@@ -95,63 +94,105 @@ struct Rough {
         line(p1, p2, into: path, move: true, overlay: true)
     }
 
-    mutating func rectangle(_ r: CGRect) -> CGPath {
-        let path = CGMutablePath()
-        let tl = CGPoint(x: r.minX, y: r.minY)
-        let tr = CGPoint(x: r.maxX, y: r.minY)
-        let br = CGPoint(x: r.maxX, y: r.maxY)
-        let bl = CGPoint(x: r.minX, y: r.maxY)
-        doubleLine(tl, tr, into: path)
-        doubleLine(tr, br, into: path)
-        doubleLine(br, bl, into: path)
-        doubleLine(bl, tl, into: path)
-        return path
-    }
-
-    mutating func polyline(_ points: [CGPoint], closed: Bool = false) -> CGPath {
-        let path = CGMutablePath()
-        guard points.count > 1 else { return path }
-        for i in 0..<(points.count - 1) {
-            doubleLine(points[i], points[i + 1], into: path)
-        }
-        if closed, let first = points.first, let last = points.last {
-            doubleLine(last, first, into: path)
-        }
-        return path
-    }
-
     mutating func lineSegment(_ p1: CGPoint, _ p2: CGPoint) -> CGPath {
         let path = CGMutablePath()
         doubleLine(p1, p2, into: path)
         return path
     }
 
+    mutating func polygon(_ points: [CGPoint]) -> CGPath {
+        let path = CGMutablePath()
+        guard points.count > 1 else { return path }
+        for i in 0..<points.count {
+            doubleLine(points[i], points[(i + 1) % points.count], into: path)
+        }
+        return path
+    }
+
+    mutating func rectangle(_ r: CGRect) -> CGPath {
+        polygon([CGPoint(x: r.minX, y: r.minY), CGPoint(x: r.maxX, y: r.minY),
+                 CGPoint(x: r.maxX, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)])
+    }
+
+    mutating func diamond(_ r: CGRect) -> CGPath {
+        polygon([CGPoint(x: r.midX, y: r.minY), CGPoint(x: r.maxX, y: r.midY),
+                 CGPoint(x: r.midX, y: r.maxY), CGPoint(x: r.minX, y: r.midY)])
+    }
+
+    /// Rounded corners drawn the way a hand draws them: straight runs joined by
+    /// a single quad through the corner, rather than a true arc.
+    mutating func roundedRectangle(_ r: CGRect, radius: CGFloat) -> CGPath {
+        let radius = min(radius, min(r.width, r.height) / 2)
+        guard radius > 1 else { return rectangle(r) }
+        let path = CGMutablePath()
+
+        let corners: [(CGPoint, CGPoint, CGPoint)] = [
+            (CGPoint(x: r.minX + radius, y: r.minY), CGPoint(x: r.maxX - radius, y: r.minY), CGPoint(x: r.maxX, y: r.minY)),
+            (CGPoint(x: r.maxX, y: r.minY + radius), CGPoint(x: r.maxX, y: r.maxY - radius), CGPoint(x: r.maxX, y: r.maxY)),
+            (CGPoint(x: r.maxX - radius, y: r.maxY), CGPoint(x: r.minX + radius, y: r.maxY), CGPoint(x: r.minX, y: r.maxY)),
+            (CGPoint(x: r.minX, y: r.maxY - radius), CGPoint(x: r.minX, y: r.minY + radius), CGPoint(x: r.minX, y: r.minY))
+        ]
+        let nextStarts = [
+            CGPoint(x: r.maxX, y: r.minY + radius),
+            CGPoint(x: r.maxX - radius, y: r.maxY),
+            CGPoint(x: r.minX, y: r.maxY - radius),
+            CGPoint(x: r.minX + radius, y: r.minY)
+        ]
+
+        for (i, corner) in corners.enumerated() {
+            doubleLine(corner.0, corner.1, into: path)
+            let control = corner.2
+            let end = nextStarts[i]
+            path.move(to: corner.1)
+            path.addQuadCurve(to: end, control: control)
+        }
+        return path
+    }
+
     /// A slightly-off ellipse, drawn as a perturbed closed spline.
     mutating func ellipse(_ r: CGRect) -> CGPath {
         let path = CGMutablePath()
-        let steps = 9
-        let rx = r.width / 2
-        let ry = r.height / 2
-        let cx = r.midX
-        let cy = r.midY
-        var pts: [CGPoint] = []
-        let start = rng.unit() * 2 * .pi
-        for i in 0..<steps {
-            let a = start + CGFloat(i) / CGFloat(steps) * 2 * .pi
-            let jitterX = offsetSym(rx * 0.03, 1)
-            let jitterY = offsetSym(ry * 0.03, 1)
-            pts.append(CGPoint(x: cx + rx * cos(a) + jitterX,
-                               y: cy + ry * sin(a) + jitterY))
+        guard r.width > 0, r.height > 0 else { return path }
+        let steps = 10
+        let rx = r.width / 2, ry = r.height / 2
+        let cx = r.midX, cy = r.midY
+
+        // Two passes with different jitter gives the same doubled look as lines.
+        for pass in 0..<2 {
+            var pts: [CGPoint] = []
+            let start = rng.unit() * 2 * .pi
+            let wobble: CGFloat = pass == 0 ? 0.035 : 0.02
+            for i in 0..<steps {
+                let a = start + CGFloat(i) / CGFloat(steps) * 2 * .pi
+                pts.append(CGPoint(x: cx + rx * cos(a) + offsetSym(rx * wobble, 1),
+                                   y: cy + ry * sin(a) + offsetSym(ry * wobble, 1)))
+            }
+            guard let first = pts.first else { continue }
+            let firstMid = CGPoint(x: (first.x + pts[1].x) / 2, y: (first.y + pts[1].y) / 2)
+            path.move(to: firstMid)
+            for i in 1...pts.count {
+                let cur = pts[i % pts.count]
+                let nxt = pts[(i + 1) % pts.count]
+                let mid = CGPoint(x: (cur.x + nxt.x) / 2, y: (cur.y + nxt.y) / 2)
+                path.addQuadCurve(to: mid, control: cur)
+            }
         }
-        guard let first = pts.first else { return path }
-        path.move(to: first)
-        for i in 0..<pts.count {
-            let cur = pts[i]
-            let nxt = pts[(i + 1) % pts.count]
-            let mid = CGPoint(x: (cur.x + nxt.x) / 2, y: (cur.y + nxt.y) / 2)
-            path.addQuadCurve(to: mid, control: cur)
+        return path
+    }
+
+    /// Parallel 45° strokes for hachure fill. Caller clips to the shape.
+    mutating func hachure(_ r: CGRect, gap: CGFloat) -> CGPath {
+        let path = CGMutablePath()
+        guard r.width > 0, r.height > 0, gap > 0 else { return path }
+        // Sweep along x by the diagonal extent so the 45° lines cover the corners.
+        let span = r.width + r.height
+        var offsetX = r.minX - r.height
+        while offsetX < r.minX + span {
+            let p1 = CGPoint(x: offsetX, y: r.minY)
+            let p2 = CGPoint(x: offsetX + r.height, y: r.maxY)
+            line(p1, p2, into: path, move: true, overlay: false)
+            offsetX += gap
         }
-        path.closeSubpath()
         return path
     }
 }

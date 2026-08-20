@@ -31,17 +31,17 @@ enum SketchExport {
     // MARK: - Image
 
     static func contentBounds(_ blocks: [Block]) -> CGRect {
-        let rects = blocks.map { $0.rect.standardized }
+        let rects = blocks.map(\.bounds)
         guard !rects.isEmpty else { return CGRect(x: 0, y: 0, width: 400, height: 300) }
-        // Frames define the crop when present; otherwise fall back to everything.
-        let frames = blocks.filter { $0.kind == .frame }.map { $0.rect.standardized }
-        let base = frames.isEmpty ? rects.reduce(CGRect.null) { $0.union($1) }
-                                  : frames.reduce(CGRect.null) { $0.union($1) }
-        let all = rects.reduce(CGRect.null) { $0.union($1) }
-        return base.union(all).insetBy(dx: -padding, dy: -padding)
+        // Frame labels sit above the sheet, so leave room or they get cropped.
+        let labelRoom: CGFloat = blocks.contains { $0.kind == .frame } ? 24 : 0
+        var union = rects.reduce(CGRect.null) { $0.union($1) }
+        union.origin.y -= labelRoom
+        union.size.height += labelRoom
+        return union.insetBy(dx: -padding, dy: -padding)
     }
 
-    static func renderImage(_ blocks: [Block], scale: CGFloat = 2) -> NSImage? {
+    static func renderImage(_ blocks: [Block], options: RenderOptions = RenderOptions(), scale: CGFloat = 2) -> NSImage? {
         let bounds = contentBounds(blocks)
         guard bounds.width > 1, bounds.height > 1 else { return nil }
 
@@ -61,7 +61,7 @@ enum SketchExport {
         ctx.scaleBy(x: 1, y: -1)
         ctx.translateBy(x: -bounds.minX, y: -bounds.minY)
 
-        ctx.setFillColor(Palette.paper.cgColor)
+        ctx.setFillColor(options.theme.color.cgColor)
         ctx.fill(bounds)
 
         let sorted = blocks.sorted { a, b in
@@ -69,7 +69,7 @@ enum SketchExport {
             return a.z < b.z
         }
         for block in sorted {
-            BlockRenderer.draw(block, in: ctx, zoom: 1)
+            BlockRenderer.draw(block, in: ctx, zoom: 1, options: options)
         }
         ctx.restoreGState()
 
@@ -78,8 +78,8 @@ enum SketchExport {
         return image
     }
 
-    static func renderPNGData(_ blocks: [Block], scale: CGFloat = 2) -> Data? {
-        guard let image = renderImage(blocks, scale: scale),
+    static func renderPNGData(_ blocks: [Block], options: RenderOptions = RenderOptions(), scale: CGFloat = 2) -> Data? {
+        guard let image = renderImage(blocks, options: options, scale: scale),
               let rep = image.representations.first as? NSBitmapImageRep else { return nil }
         return rep.representation(using: .png, properties: [:])
     }
@@ -224,11 +224,11 @@ enum SketchExport {
     // MARK: - Pasteboard
 
     @discardableResult
-    static func copyToPasteboard(_ blocks: [Block], mode: PayloadMode) -> String {
+    static func copyToPasteboard(_ blocks: [Block], mode: PayloadMode, options: RenderOptions = RenderOptions()) -> String {
+        guard !blocks.isEmpty else { return "Nothing to copy" }
+
         let pb = NSPasteboard.general
         pb.clearContents()
-
-        guard !blocks.isEmpty else { return "Nothing to copy" }
 
         // One item carrying both representations lets the receiving app pick the
         // richest form it supports — editors take the image, terminals the text.
@@ -239,11 +239,11 @@ enum SketchExport {
         case .tree:
             item.setString(text, forType: .string)
         case .image:
-            guard let png = renderPNGData(blocks) else { return "Nothing to copy" }
+            guard let png = renderPNGData(blocks, options: options) else { return "Nothing to copy" }
             item.setData(png, forType: .png)
         case .treeAndImage:
             item.setString(text, forType: .string)
-            if let png = renderPNGData(blocks) { item.setData(png, forType: .png) }
+            if let png = renderPNGData(blocks, options: options) { item.setData(png, forType: .png) }
         }
 
         pb.writeObjects([item])

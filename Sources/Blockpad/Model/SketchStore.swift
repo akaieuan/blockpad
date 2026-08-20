@@ -3,12 +3,26 @@ import Combine
 
 enum Tool: Equatable {
     case select
+    case hand
+    case eraser
     case draw(BlockKind)
 
     var kind: BlockKind? {
         if case .draw(let k) = self { return k }
         return nil
     }
+
+    var isDrawing: Bool { kind != nil }
+}
+
+/// The style new blocks inherit, and what the properties panel edits.
+struct Style: Equatable {
+    var colorIndex: Int = 0
+    var fillIndex: Int = 0
+    var fillStyle: FillStyle = .solid
+    var corner: CornerStyle = .round
+    var opacity: Double = 1
+    var strokeIndex: Int = 1
 }
 
 struct SketchDocument: Codable {
@@ -16,6 +30,8 @@ struct SketchDocument: Codable {
     var frameSize: CGSize?
     var pan: CGPoint = .zero
     var zoom: CGFloat = 1
+    var theme: String?
+    var sketchy: Bool?
 }
 
 /// Canvas contents persist across hide/show and across app restart (§2).
@@ -24,12 +40,20 @@ final class SketchStore: ObservableObject {
     @Published var blocks: [Block] = [] { didSet { scheduleSave() } }
     @Published var selection: Set<UUID> = []
     @Published var tool: Tool = .select
-    @Published var colorIndex: Int = 0
-    @Published var strokeIndex: Int = 1
+    /// Excalidraw's padlock: when off, the tool reverts to select after one
+    /// shape, which is what makes a fresh shape immediately draggable.
+    @Published var toolLocked: Bool = false
+    @Published var style = Style()
     @Published var frameSize: CGSize? = FramePreset.all[0].size
+    @Published var theme: CanvasTheme = .paper { didSet { scheduleSave() } }
+    /// Crisp is the default look; the hand-drawn renderer stays one toggle away.
+    @Published var sketchy: Bool = false { didSet { scheduleSave() } }
     @Published var toast: String?
+    @Published var libraryOpen: Bool = false
+    @Published var inspectorOpen: Bool = true
 
-    /// Viewport, owned here so it survives hide/show too.
+    var renderOptions: RenderOptions { RenderOptions(theme: theme, sketchy: sketchy) }
+
     var pan: CGPoint = .zero { didSet { scheduleSave() } }
     var zoom: CGFloat = 1 { didSet { scheduleSave() } }
 
@@ -45,23 +69,28 @@ final class SketchStore: ObservableObject {
 
     init() { load() }
 
-    // MARK: - Mutation
+    // MARK: - Access
 
     func block(_ id: UUID) -> Block? { blocks.first { $0.id == id } }
 
-    func replace(_ block: Block) {
-        guard let i = blocks.firstIndex(where: { $0.id == block.id }) else { return }
-        blocks[i] = block
-    }
+    var selectedBlocks: [Block] { blocks.filter { selection.contains($0.id) } }
 
     var nextZ: Int { (blocks.map(\.z).max() ?? 0) + 1 }
 
-    /// Blocks in paint order. Frames sit under everything so they read as sheets.
+    /// Paint order. Frames sit under everything so they read as sheets.
     var sorted: [Block] {
         blocks.sorted { a, b in
             if (a.kind == .frame) != (b.kind == .frame) { return a.kind == .frame }
             return a.z < b.z
         }
+    }
+
+    /// The style the panel should display: the selection's, when there is one.
+    var effectiveStyle: Style {
+        guard let first = selectedBlocks.first else { return style }
+        return Style(colorIndex: first.colorIndex, fillIndex: first.fillIndex,
+                     fillStyle: first.fillStyle, corner: first.corner,
+                     opacity: first.opacity, strokeIndex: first.strokeIndex)
     }
 
     func flash(_ message: String) {
@@ -82,10 +111,10 @@ final class SketchStore: ObservableObject {
     }
 
     func save() {
-        let doc = SketchDocument(blocks: blocks, frameSize: frameSize, pan: pan, zoom: zoom)
+        let doc = SketchDocument(blocks: blocks, frameSize: frameSize,
+                                 pan: pan, zoom: zoom, theme: theme.name, sketchy: sketchy)
         do {
-            let data = try JSONEncoder().encode(doc)
-            try data.write(to: Self.storeURL, options: .atomic)
+            try JSONEncoder().encode(doc).write(to: Self.storeURL, options: .atomic)
         } catch {
             NSLog("Blockpad: save failed — \(error)")
         }
@@ -98,5 +127,7 @@ final class SketchStore: ObservableObject {
         frameSize = doc.frameSize
         pan = doc.pan
         zoom = doc.zoom == 0 ? 1 : doc.zoom
+        theme = CanvasTheme.all.first { $0.name == doc.theme } ?? .paper
+        sketchy = doc.sketchy ?? false
     }
 }

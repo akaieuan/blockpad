@@ -6,6 +6,12 @@ extension KeyboardShortcuts.Name {
     /// special characters, so Ctrl is the least contested modifier on macOS.
     static let toggleCanvas = Self("toggleCanvas",
                                    default: .init(.space, modifiers: [.control, .option]))
+
+    /// macOS ships Ctrl+Opt+Space bound to "Select next source in Input menu",
+    /// and a system binding wins. This second, uncontested chord means the app
+    /// is reachable on a clean machine without a trip to System Settings.
+    static let toggleCanvasAlt = Self("toggleCanvasAlt",
+                                      default: .init(.b, modifiers: [.control, .option]))
 }
 
 @MainActor
@@ -25,9 +31,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         KeyboardShortcuts.onKeyDown(for: .toggleCanvas) { [weak self] in
             self?.controller.toggle()
         }
+        KeyboardShortcuts.onKeyDown(for: .toggleCanvasAlt) { [weak self] in
+            self?.controller.toggle()
+        }
 
         // First run opens the panel so the app isn't an invisible no-op.
-        if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
+        // --show forces it, which is what makes relaunching during development
+        // useful rather than silent.
+        if CommandLine.arguments.contains("--show")
+            || !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
             UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
             controller.show()
         }
@@ -69,10 +81,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func shortcutDescription() -> String {
-        guard let shortcut = KeyboardShortcuts.getShortcut(for: .toggleCanvas) else {
-            return "No shortcut set"
-        }
-        return "Toggle: \(shortcut.description)"
+        let shortcuts = [KeyboardShortcuts.getShortcut(for: .toggleCanvas),
+                         KeyboardShortcuts.getShortcut(for: .toggleCanvasAlt)]
+            .compactMap { $0?.description }
+        return shortcuts.isEmpty ? "No shortcut set" : "Toggle: " + shortcuts.joined(separator: "  or  ")
     }
 
     @objc private func togglePanel() { controller.toggle() }

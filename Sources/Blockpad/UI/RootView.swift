@@ -1,41 +1,123 @@
 import SwiftUI
 
+/// Layout breakpoints. The window is a floating utility that gets dragged small
+/// constantly, so the chrome has to survive widths a normal app never sees.
+private struct Layout {
+    let width: CGFloat
+
+    var compact: Bool { width < 860 }
+    var showsBadges: Bool { width >= 1000 }
+    var showsCopyLabel: Bool { width >= 780 }
+    var toolSize: CGFloat { width >= 1000 ? 31 : (width >= 860 ? 29 : 27) }
+    var inspectorWidth: CGFloat { width >= 1000 ? 186 : 168 }
+}
+
 struct RootView: View {
     @ObservedObject var store: SketchStore
     @AppStorage("payloadMode") private var payloadModeRaw: String = PayloadMode.tree.rawValue
 
     var body: some View {
-        ZStack(alignment: .top) {
-            VStack(spacing: 0) {
-                ToolbarView(
-                    store: store,
-                    onSend: send,
-                    onStrokeChange: { CanvasHost.shared?.applyStroke($0) }
-                )
-                CanvasRepresentable(store: store, onSend: send)
-            }
+        GeometryReader { geometry in
+            let layout = Layout(width: geometry.size.width)
 
-            if let toast = store.toast {
-                Text(toast)
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .fill(Color(nsColor: .windowBackgroundColor).opacity(0.96))
-                            .shadow(color: .black.opacity(0.18), radius: 10, y: 3)
-                    )
-                    .padding(.top, 56)
+            ZStack(alignment: .topLeading) {
+                // Full-bleed canvas. All chrome floats above it rather than
+                // partitioning the window, which is what made the old bar read
+                // as a black stripe across the top.
+                CanvasRepresentable(store: store, onSend: send)
+                    .ignoresSafeArea()
+
+                // One row, so the tools and the copy button can never overlap
+                // however narrow the window gets.
+                HStack(alignment: .top, spacing: 10) {
+                    Spacer(minLength: 0)
+                    ToolbarIsland(store: store,
+                                  buttonSize: layout.toolSize,
+                                  showsBadges: layout.showsBadges)
+                    Spacer(minLength: 0)
+                    SendIsland(store: store,
+                               showsLabel: layout.showsCopyLabel,
+                               onSend: send)
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+
+                inspectorColumn(layout)
+
+                if store.libraryOpen {
+                    HStack {
+                        Spacer()
+                        LibraryPanel(store: store, canvas: { CanvasHost.shared })
+                            .padding(.trailing, 12)
+                            .padding(.top, 58)
+                            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
+                    }
+                }
+
+                VStack {
+                    Spacer()
+                    HStack {
+                        BottomControls(store: store, canvas: { CanvasHost.shared })
+                        Spacer()
+                    }
+                }
+                .padding(12)
+
+                if let toast = store.toast {
+                    HStack {
+                        Spacer()
+                        Text(toast)
+                            .font(.system(size: 12, weight: .medium))
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 8)
+                            .glassSurface(cornerRadius: 9)
+                        Spacer()
+                    }
+                    .padding(.top, 62)
                     .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            // Collapse on the way down, restore on the way back up. onAppear
+            // matters as much as onChange: the panel is usually restored at a
+            // remembered size, so the first layout is the one that counts.
+            .onAppear { store.inspectorOpen = !layout.compact }
+            .onChange(of: layout.compact) { _, isCompact in
+                store.inspectorOpen = !isCompact
             }
         }
         .animation(.easeOut(duration: 0.16), value: store.toast)
+        .animation(.spring(response: 0.28, dampingFraction: 0.85), value: store.libraryOpen)
+        .animation(.spring(response: 0.28, dampingFraction: 0.85), value: store.inspectorOpen)
+    }
+
+    /// Sits under the traffic lights, which own the top-left corner.
+    @ViewBuilder
+    private func inspectorColumn(_ layout: Layout) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if store.inspectorOpen {
+                PropertiesPanel(store: store,
+                                width: layout.inspectorWidth,
+                                canvas: { CanvasHost.shared })
+                    .transition(.opacity.combined(with: .move(edge: .leading)))
+            }
+            HStack {
+                ToolButton(symbol: store.inspectorOpen ? "sidebar.leading" : "slider.horizontal.3",
+                           help: store.inspectorOpen ? "Hide properties" : "Show properties",
+                           size: 28) {
+                    store.inspectorOpen.toggle()
+                }
+                .padding(4)
+                .glassSurface(cornerRadius: 11)
+                Spacer()
+            }
+        }
+        .padding(.leading, 12)
+        .padding(.top, 54)
     }
 
     private func send() {
         let mode = PayloadMode(rawValue: payloadModeRaw) ?? .tree
-        let result = SketchExport.copyToPasteboard(store.blocks, mode: mode)
-        store.flash(result)
+        store.flash(SketchExport.copyToPasteboard(store.blocks, mode: mode, options: store.renderOptions))
     }
 }
 
@@ -47,20 +129,18 @@ struct CanvasRepresentable: NSViewRepresentable {
     func makeNSView(context: Context) -> CanvasView {
         let view = CanvasView(store: store)
         view.onSend = onSend
-        view.onCopy = onSend
         CanvasHost.shared = view
         return view
     }
 
     func updateNSView(_ view: CanvasView, context: Context) {
         view.onSend = onSend
-        view.onCopy = onSend
     }
 }
 
-/// The toolbar needs to reach the canvas for operations that act on the
-/// selection. One live canvas exists for the app's lifetime, so a reference is
-/// simpler and less fragile than threading a binding through.
+/// The chrome reaches the canvas for operations that act on the selection. One
+/// live canvas exists for the app's lifetime, so a reference is simpler and less
+/// fragile than threading a binding through every panel.
 @MainActor
 enum CanvasHost {
     static weak var shared: CanvasView?

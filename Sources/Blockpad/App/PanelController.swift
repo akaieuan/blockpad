@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// A nonactivating panel that still takes key focus, so you can draw and type
@@ -21,6 +22,7 @@ final class PanelController {
     private(set) var pendingTarget: NSRunningApplication?
 
     private var showStartedAt: CFAbsoluteTime = 0
+    private var cancellables = Set<AnyCancellable>()
 
     init(store: SketchStore) {
         self.store = store
@@ -43,10 +45,19 @@ final class PanelController {
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
         panel.animationBehavior = .utilityWindow
-        panel.minSize = NSSize(width: 520, height: 360)
-        panel.backgroundColor = Palette.paper
+        panel.minSize = NSSize(width: 640, height: 440)
+        // The canvas paints its own ground edge to edge. Leaving the window
+        // opaque with a stale colour is what produced the strip above the
+        // toolbar in the first build.
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
 
-        panel.contentView = NSHostingView(rootView: RootView(store: store))
+        // Toolbar chrome floats over the canvas, so the titlebar must not
+        // reserve any layout space of its own.
+        let hosting = NSHostingView(rootView: RootView(store: store))
+        hosting.frame = panel.contentLayoutRect
+        hosting.autoresizingMask = [.width, .height]
+        panel.contentView = hosting
 
         // Remembers its size and position across launches (§2).
         panel.setFrameAutosaveName("BlockpadPanel")
@@ -56,6 +67,15 @@ final class PanelController {
         }
 
         self.panel = panel
+
+        // The chrome follows the canvas, not the system. A light paper canvas
+        // under dark-mode glass is exactly the black-bar problem the floating
+        // islands were meant to solve.
+        store.$theme
+            .sink { [weak panel] theme in
+                panel?.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Visibility
