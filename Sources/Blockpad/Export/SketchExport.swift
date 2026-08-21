@@ -1,4 +1,5 @@
 import AppKit
+import BlockpadKit
 
 enum PayloadMode: String, CaseIterable, Identifiable {
     case tree
@@ -133,7 +134,7 @@ enum SketchExport {
         let r = block.rect.standardized
         let children = ordered(blocks.filter { parent(of: $0, in: blocks)?.id == block.id })
         let childSignature = children.map { signature($0, in: blocks) }.joined(separator: "|")
-        return "\(block.kind.rawValue):\(Int(r.width.rounded()))x\(Int(r.height.rounded())):\(block.text):\(block.colorIndex):[\(childSignature)]"
+        return "\(block.kind.rawValue):\(Int(r.width.rounded()))x\(Int(r.height.rounded())):\(block.text):\(block.stroke):\(block.fill ?? "-"):[\(childSignature)]"
     }
 
     private static func parent(of block: Block, in blocks: [Block]) -> Block? {
@@ -210,8 +211,17 @@ enum SketchExport {
             parts.append(anchor)
         }
         if !block.text.isEmpty { parts.append("\"\(block.text)\"") }
-        if block.colorIndex != 0 {
-            parts.append("[\(Palette.name(block.colorIndex).lowercased())]")
+        // Hex, not a palette name. `#55677A` is a value the receiving agent can
+        // paste into CSS; `[slate]` was a lookup it could not perform. Only
+        // emitted when it differs from the default, to keep the line short.
+        if block.stroke != Palette.defaultStroke {
+            parts.append("stroke \(block.stroke)")
+        }
+        if let fill = block.fill, block.fillStyle != .none {
+            parts.append("fill \(fill)")
+        }
+        if abs(block.cornerRadius - 10) > 0.5 {
+            parts.append("r\(Int(block.cornerRadius.rounded()))")
         }
 
         lines.append(indent + parts.joined(separator: "  "))

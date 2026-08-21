@@ -1,41 +1,54 @@
 import AppKit
+import BlockpadKit
 
 /// Five stroke swatches, no picker (§3). Ink, slate, dusty red, sage, amber.
+struct ColorPreset: Identifiable, Hashable {
+    var id: String { hex }
+    let name: String
+    let hex: String
+
+    var nsColor: NSColor {
+        guard let c = HexColor.components(hex) else { return .black }
+        return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: c.a)
+    }
+}
+
+/// Presets, not the range.
+///
+/// §3 said five swatches and no picker, and §11 listed a colour picker as a
+/// non-goal. Both are reversed deliberately: colour is now arbitrary hex, and
+/// these are one-click starting points. The tree gains from it too — `#55677A`
+/// is a value the receiving agent can paste into CSS, where `[slate]` was a
+/// lookup it could not perform.
 enum Palette {
-    static let colors: [NSColor] = [
-        NSColor(srgbRed: 0.169, green: 0.165, blue: 0.157, alpha: 1), // ink   #2B2A28
-        NSColor(srgbRed: 0.333, green: 0.404, blue: 0.478, alpha: 1), // slate #55677A
-        NSColor(srgbRed: 0.706, green: 0.325, blue: 0.290, alpha: 1), // dusty red #B4534A
-        NSColor(srgbRed: 0.431, green: 0.545, blue: 0.416, alpha: 1), // sage  #6E8B6A
-        NSColor(srgbRed: 0.753, green: 0.541, blue: 0.180, alpha: 1)  // amber #C08A2E
+
+    static let defaultStroke = "#2B2A28"
+
+    static let strokePresets: [ColorPreset] = [
+        ColorPreset(name: "Ink", hex: "#2B2A28"),
+        ColorPreset(name: "Slate", hex: "#55677A"),
+        ColorPreset(name: "Dusty red", hex: "#B4534A"),
+        ColorPreset(name: "Sage", hex: "#6E8B6A"),
+        ColorPreset(name: "Amber", hex: "#C08A2E"),
+        ColorPreset(name: "Indigo", hex: "#5A55DA"),
+        ColorPreset(name: "Teal", hex: "#2F7E7A"),
+        ColorPreset(name: "Plum", hex: "#7A4A78")
     ]
 
-    static let names = ["Ink", "Slate", "Dusty red", "Sage", "Amber"]
-
-    /// Fills are tints of the stroke hues so a filled shape still reads as one
-    /// object. Index 0 is transparent.
-    static let fills: [NSColor?] = [
-        nil,
-        NSColor(srgbRed: 0.898, green: 0.890, blue: 0.875, alpha: 1),
-        NSColor(srgbRed: 0.965, green: 0.855, blue: 0.835, alpha: 1),
-        NSColor(srgbRed: 0.867, green: 0.918, blue: 0.855, alpha: 1),
-        NSColor(srgbRed: 0.855, green: 0.898, blue: 0.937, alpha: 1),
-        NSColor(srgbRed: 0.980, green: 0.918, blue: 0.780, alpha: 1)
+    static let fillPresets: [ColorPreset] = [
+        ColorPreset(name: "Stone", hex: "#E5E3DF"),
+        ColorPreset(name: "Blush", hex: "#F6DAD5"),
+        ColorPreset(name: "Sage", hex: "#DDEADA"),
+        ColorPreset(name: "Sky", hex: "#DAE5EF"),
+        ColorPreset(name: "Sand", hex: "#FAEAC7"),
+        ColorPreset(name: "Lilac", hex: "#E3E0F7"),
+        ColorPreset(name: "White", hex: "#FFFFFF"),
+        ColorPreset(name: "Charcoal", hex: "#3A3A3C")
     ]
 
-    static let fillNames = ["Transparent", "Stone", "Blush", "Sage", "Sky", "Sand"]
-
-    static func color(_ index: Int) -> NSColor {
-        colors[max(0, min(colors.count - 1, index))]
-    }
-
-    static func name(_ index: Int) -> String {
-        names[max(0, min(names.count - 1, index))]
-    }
-
-    static func fill(_ index: Int) -> NSColor? {
-        guard index > 0, index < fills.count else { return nil }
-        return fills[index]
+    static func color(_ hex: String) -> NSColor {
+        guard let c = HexColor.components(hex) else { return .black }
+        return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: c.a)
     }
 
     static let selection = NSColor(srgbRed: 0.353, green: 0.333, blue: 0.855, alpha: 1)
@@ -66,9 +79,15 @@ struct CanvasTheme: Identifiable, Hashable, Codable {
         isDark ? NSColor(white: 1, alpha: 0.22) : NSColor(srgbRed: 0.169, green: 0.165, blue: 0.157, alpha: 0.28)
     }
 
-    /// Ink is invisible on a dark ground, so it flips to a warm off-white.
-    func inkAdjusted(_ color: NSColor, index: Int) -> NSColor {
-        guard isDark, index == 0 else { return color }
+    /// Near-black ink is invisible on a dark ground, so it flips to a warm
+    /// off-white. Keyed off luminance rather than a palette index, because with
+    /// arbitrary colours there is no index to check.
+    func inkAdjusted(_ color: NSColor) -> NSColor {
+        guard isDark, let srgb = color.usingColorSpace(.sRGB) else { return color }
+        let luminance = 0.2126 * srgb.redComponent
+            + 0.7152 * srgb.greenComponent
+            + 0.0722 * srgb.blueComponent
+        guard luminance < 0.25 else { return color }
         return NSColor(srgbRed: 0.933, green: 0.925, blue: 0.906, alpha: 1)
     }
 
@@ -95,12 +114,11 @@ struct RGBA: Hashable, Codable {
 }
 
 enum StrokeWeight {
-    static let widths: [CGFloat] = [1.1, 2.0, 3.4]
-    static let names = ["Thin", "Medium", "Bold"]
-
-    static func width(_ index: Int) -> CGFloat {
-        widths[max(0, min(widths.count - 1, index))]
-    }
+    /// Quick presets. Width itself is a free number now.
+    static let presets: [(name: String, width: Double)] = [
+        ("Hairline", 1), ("Thin", 1.5), ("Medium", 2), ("Bold", 3), ("Heavy", 5)
+    ]
+    static let range: ClosedRange<Double> = 0...24
 }
 
 /// Reference frame presets (§3).

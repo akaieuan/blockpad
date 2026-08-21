@@ -39,22 +39,30 @@ struct ComponentPreset: Identifiable {
         /// Relative to the preset's origin.
         let rect: CGRect
         var text: String = ""
+        /// Index into the preset palettes, resolved at build time. Presets stay
+        /// on named colours so they follow the palette rather than freezing a
+        /// hex the user cannot recognise later.
         var fill: Int = 0
         var color: Int = 0
-        var stroke: Int? = nil
+        var stroke: Double? = nil
     }
 
     func build(at origin: CGPoint, style: Style) -> [Block] {
         parts.map { part in
-            Block(kind: part.kind,
-                  rect: part.rect.offsetBy(dx: origin.x, dy: origin.y),
-                  text: part.text,
-                  colorIndex: part.color,
-                  fillIndex: part.kind.takesFill ? part.fill : 0,
-                  fillStyle: part.fill == 0 ? .none : style.fillStyle,
-                  corner: style.corner,
-                  opacity: 1,
-                  strokeIndex: part.stroke ?? style.strokeIndex)
+            let strokeHex = Palette.strokePresets[
+                max(0, min(Palette.strokePresets.count - 1, part.color))].hex
+            let fillHex: String? = (part.kind.takesFill && part.fill > 0)
+                ? Palette.fillPresets[min(Palette.fillPresets.count - 1, part.fill - 1)].hex
+                : nil
+            return Block(kind: part.kind,
+                         rect: part.rect.offsetBy(dx: origin.x, dy: origin.y),
+                         text: part.text,
+                         stroke: strokeHex,
+                         fill: fillHex,
+                         fillStyle: fillHex == nil ? .none : style.fillStyle,
+                         strokeWidth: part.stroke ?? style.strokeWidth,
+                         cornerRadius: style.cornerRadius,
+                         opacity: 1)
         }
     }
 
@@ -118,7 +126,7 @@ struct ComponentPreset: Identifiable {
                         category: .layout, size: CGSize(width: 560, height: 260), parts: [
             box(0, 0, 560, 260, fill: 1, color: 1),
             Part(kind: .text, rect: CGRect(x: 120, y: 70, width: 320, height: 30),
-                 text: "Headline goes here", stroke: 2),
+                 text: "Headline goes here", stroke: 3),
             label(120, 116, 320, "Supporting sentence underneath.", color: 1),
             box(120, 156, 120, 44, "Get started", fill: 4),
             box(252, 156, 120, 44, "Learn more", color: 1)
@@ -274,7 +282,7 @@ struct ComponentPreset: Identifiable {
                 parts.append(box(x, 0, 160, 110, fill: 1, color: 1))
                 parts.append(label(x + 16, 20, 120, "Metric", color: 1))
                 parts.append(Part(kind: .text, rect: CGRect(x: x + 16, y: 48, width: 120, height: 28),
-                                  text: "1,234", stroke: 2))
+                                  text: "1,234", stroke: 3))
             }
             return parts
         }()),
@@ -362,7 +370,7 @@ struct ComponentPreset: Identifiable {
                         category: .feedback, size: CGSize(width: 340, height: 200), parts: [
             box(134, 0, 72, 72, fill: 1, color: 1),
             Part(kind: .text, rect: CGRect(x: 60, y: 92, width: 220, height: 24),
-                 text: "Nothing here yet", stroke: 2),
+                 text: "Nothing here yet", stroke: 3),
             label(50, 124, 240, "Create your first item to begin.", color: 1),
             box(110, 156, 120, 40, "Create", fill: 4)
         ]),

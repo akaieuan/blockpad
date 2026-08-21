@@ -1,4 +1,5 @@
 import AppKit
+import BlockpadKit
 import Combine
 
 /// AppKit rather than SwiftUI because hit testing, drag handles and marquee
@@ -198,7 +199,7 @@ final class CanvasView: NSView {
                     return block
                 }
             case .arrow, .line:
-                let tolerance = max(8, StrokeWeight.width(block.strokeIndex) * 3) / store.zoom
+                let tolerance = max(8, CGFloat(block.strokeWidth) * 3) / store.zoom
                 if distanceToSegment(docPoint, block.rect.origin,
                                      CGPoint(x: block.rect.maxX, y: block.rect.maxY)) < tolerance {
                     return block
@@ -481,12 +482,12 @@ final class CanvasView: NSView {
 
     private func makeStyledBlock(kind: BlockKind, rect: CGRect) -> Block {
         Block(kind: kind, rect: rect,
-              colorIndex: store.style.colorIndex,
-              fillIndex: kind.takesFill ? store.style.fillIndex : 0,
+              stroke: store.style.stroke,
+              fill: kind.takesFill ? store.style.fill : nil,
               fillStyle: store.style.fillStyle,
-              corner: store.style.corner,
-              opacity: store.style.opacity,
-              strokeIndex: store.style.strokeIndex)
+              strokeWidth: store.style.strokeWidth,
+              cornerRadius: store.style.cornerRadius,
+              opacity: store.style.opacity)
     }
 
     private func beginCreating(kind: BlockKind, at docPoint: CGPoint) {
@@ -722,8 +723,8 @@ final class CanvasView: NSView {
 
         let field = NSTextField(frame: editorFrame(for: block))
         field.stringValue = block.text
-        field.font = BlockRenderer.canvasFont(size: BlockRenderer.fontSize(forStroke: block.strokeIndex) * store.zoom)
-        field.textColor = store.theme.inkAdjusted(Palette.color(block.colorIndex), index: block.colorIndex)
+        field.font = BlockRenderer.canvasFont(size: BlockRenderer.fontSize(forStrokeWidth: block.strokeWidth) * store.zoom)
+        field.textColor = store.theme.inkAdjusted(Palette.color(block.stroke))
         field.alignment = block.kind == .text ? .natural : .center
         field.isBordered = false
         field.drawsBackground = true
@@ -741,7 +742,7 @@ final class CanvasView: NSView {
 
     private func editorFrame(for block: Block) -> CGRect {
         let r = toView(block.bounds)
-        let height = max(24, BlockRenderer.fontSize(forStroke: block.strokeIndex) * 1.5 * store.zoom)
+        let height = max(24, BlockRenderer.fontSize(forStrokeWidth: block.strokeWidth) * 1.5 * store.zoom)
         switch block.kind {
         case .text:
             return CGRect(x: r.minX, y: r.minY, width: max(80, r.width), height: height)
@@ -779,7 +780,7 @@ final class CanvasView: NSView {
         block.text = text
         if block.kind == .text {
             block.rect = CGRect(origin: block.rect.origin,
-                                size: BlockRenderer.measure(text, strokeIndex: block.strokeIndex))
+                                size: BlockRenderer.measure(text, strokeWidth: block.strokeWidth))
         }
         var blocks = store.blocks
         if let i = blocks.firstIndex(where: { $0.id == id }) { blocks[i] = block }

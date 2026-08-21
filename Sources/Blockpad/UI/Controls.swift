@@ -118,7 +118,7 @@ struct SwatchButton: View {
                         path.move(to: CGPoint(x: size * 0.26, y: size * 0.74))
                         path.addLine(to: CGPoint(x: size * 0.74, y: size * 0.26))
                     }
-                    .stroke(Color(nsColor: Palette.colors[2]).opacity(0.9), lineWidth: 1.3)
+                    .stroke(Color(nsColor: Palette.color("#B4534A")).opacity(0.9), lineWidth: 1.3)
                 }
                 Circle()
                     .strokeBorder(Token.accent, lineWidth: 1.8)

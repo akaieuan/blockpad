@@ -78,11 +78,11 @@ enum IconRender {
         // SVG's y axis runs downward, so the stacked pair is emitted top-first.
         let blocks = [
             rect(CGRect(x: content.minX, y: content.minY, width: leftWidth, height: content.height),
-                 Palette.color(1)),
+                 Palette.color("#55677A")),
             rect(CGRect(x: rightX, y: content.minY, width: rightWidth, height: rowHeight),
-                 Palette.color(2)),
+                 Palette.color("#B4534A")),
             rect(CGRect(x: rightX, y: content.minY + rowHeight + gap, width: rightWidth, height: rowHeight),
-                 Palette.color(4))
+                 Palette.color("#C08A2E"))
         ].joined(separator: "\n")
 
         return String(format: """
@@ -164,11 +164,11 @@ enum IconRender {
 
         let blocks: [(CGRect, NSColor)] = [
             (CGRect(x: content.minX, y: content.minY, width: leftWidth, height: content.height),
-             Palette.color(1)),
+             Palette.color("#55677A")),
             (CGRect(x: rightX, y: content.minY, width: rightWidth, height: rowHeight),
-             Palette.color(4)),
+             Palette.color("#C08A2E")),
             (CGRect(x: rightX, y: content.minY + rowHeight + gap, width: rightWidth, height: rowHeight),
-             Palette.color(2))
+             Palette.color("#B4534A"))
         ]
 
         for (rect, color) in blocks {

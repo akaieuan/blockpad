@@ -1,4 +1,5 @@
 import AppKit
+import BlockpadKit
 import Combine
 
 enum Tool: Equatable {
@@ -17,12 +18,12 @@ enum Tool: Equatable {
 
 /// The style new blocks inherit, and what the properties panel edits.
 struct Style: Equatable {
-    var colorIndex: Int = 0
-    var fillIndex: Int = 0
+    var stroke: String = Palette.defaultStroke
+    var fill: String?
     var fillStyle: FillStyle = .solid
-    var corner: CornerStyle = .round
+    var strokeWidth: Double = 2
+    var cornerRadius: Double = 10
     var opacity: Double = 1
-    var strokeIndex: Int = 1
 }
 
 struct SketchDocument: Codable {
@@ -32,6 +33,7 @@ struct SketchDocument: Codable {
     var zoom: CGFloat = 1
     var theme: String?
     var sketchy: Bool?
+    var recentColors: [String]?
     var snapping: Bool?
 }
 
@@ -91,9 +93,20 @@ final class SketchStore: ObservableObject {
     /// The style the panel should display: the selection's, when there is one.
     var effectiveStyle: Style {
         guard let first = selectedBlocks.first else { return style }
-        return Style(colorIndex: first.colorIndex, fillIndex: first.fillIndex,
-                     fillStyle: first.fillStyle, corner: first.corner,
-                     opacity: first.opacity, strokeIndex: first.strokeIndex)
+        return Style(stroke: first.stroke, fill: first.fill,
+                     fillStyle: first.fillStyle, strokeWidth: first.strokeWidth,
+                     cornerRadius: first.cornerRadius, opacity: first.opacity)
+    }
+
+    /// Colours the user has actually reached for, newest first. Arbitrary
+    /// colour is only usable if getting back to one you already picked is quick.
+    @Published var recentColors: [String] = [] { didSet { scheduleSave() } }
+
+    func noteRecent(_ hex: String) {
+        guard let normalized = HexColor.normalized(hex) else { return }
+        var next = recentColors.filter { $0 != normalized }
+        next.insert(normalized, at: 0)
+        recentColors = Array(next.prefix(12))
     }
 
     func flash(_ message: String) {
@@ -116,7 +129,7 @@ final class SketchStore: ObservableObject {
     func save() {
         let doc = SketchDocument(blocks: blocks, frameSize: frameSize,
                                  pan: pan, zoom: zoom, theme: theme.name, sketchy: sketchy,
-                                 snapping: snapping)
+                                 recentColors: recentColors, snapping: snapping)
         do {
             try JSONEncoder().encode(doc).write(to: Self.storeURL, options: .atomic)
         } catch {
@@ -134,5 +147,6 @@ final class SketchStore: ObservableObject {
         theme = CanvasTheme.all.first { $0.name == doc.theme } ?? .paper
         sketchy = doc.sketchy ?? false
         snapping = doc.snapping ?? true
+        recentColors = doc.recentColors ?? []
     }
 }

@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import BlockpadKit
 
 /// Semantic type of a block. The canvas draws these differently, and the tree
 /// serializer (§5) reads the same enum, which is why serialization is nearly free.
@@ -100,12 +101,15 @@ struct Block: Identifiable, Codable, Equatable {
     /// Document coordinates, y-down.
     var rect: CGRect
     var text: String = ""
-    var colorIndex: Int = 0
-    var fillIndex: Int = 0
-    var fillStyle: FillStyle = .hachure
-    var corner: CornerStyle = .round
+    /// Arbitrary colour as hex. Replaces the old five-index palette — those
+    /// indices are now presets that write into this, not the range itself.
+    var stroke: String = Palette.defaultStroke
+    /// nil is no fill at all, which is different from white.
+    var fill: String?
+    var fillStyle: FillStyle = .solid
+    var strokeWidth: Double = 2
+    var cornerRadius: Double = 10
     var opacity: Double = 1
-    var strokeIndex: Int = 1
     /// Stable per-block seed so roughness never shimmers between redraws.
     var seed: UInt64 = UInt64.random(in: 1...UInt64.max)
     /// Freehand points, `.pen` only. Document coordinates.
@@ -113,9 +117,9 @@ struct Block: Identifiable, Codable, Equatable {
     var z: Int = 0
 
     init(id: UUID = UUID(), kind: BlockKind, parentID: UUID? = nil, rect: CGRect,
-         text: String = "", colorIndex: Int = 0, fillIndex: Int = 0,
-         fillStyle: FillStyle = .hachure, corner: CornerStyle = .round,
-         opacity: Double = 1, strokeIndex: Int = 1,
+         text: String = "", stroke: String = Palette.defaultStroke, fill: String? = nil,
+         fillStyle: FillStyle = .solid, strokeWidth: Double = 2,
+         cornerRadius: Double = 10, opacity: Double = 1,
          seed: UInt64 = UInt64.random(in: 1...UInt64.max),
          points: [CGPoint] = [], z: Int = 0) {
         self.id = id
@@ -123,12 +127,12 @@ struct Block: Identifiable, Codable, Equatable {
         self.parentID = parentID
         self.rect = rect
         self.text = text
-        self.colorIndex = colorIndex
-        self.fillIndex = fillIndex
+        self.stroke = stroke
+        self.fill = fill
         self.fillStyle = fillStyle
-        self.corner = corner
+        self.strokeWidth = strokeWidth
+        self.cornerRadius = cornerRadius
         self.opacity = opacity
-        self.strokeIndex = strokeIndex
         self.seed = seed
         self.points = points
         self.z = z
@@ -136,6 +140,13 @@ struct Block: Identifiable, Codable, Equatable {
 
     /// Hand-rolled so a scene saved by an older build still opens: every field
     /// added after v0.1 decodes to a default rather than failing the whole file.
+    /// Includes the retired palette keys so old scenes can still be read.
+    private enum CodingKeys: String, CodingKey {
+        case id, kind, parentID, rect, text, stroke, fill, fillStyle
+        case strokeWidth, cornerRadius, opacity, seed, points, z
+        case colorIndex, fillIndex, strokeIndex, corner
+    }
+
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
@@ -143,15 +154,65 @@ struct Block: Identifiable, Codable, Equatable {
         parentID = try c.decodeIfPresent(UUID.self, forKey: .parentID)
         rect = try c.decodeIfPresent(CGRect.self, forKey: .rect) ?? .zero
         text = try c.decodeIfPresent(String.self, forKey: .text) ?? ""
-        colorIndex = try c.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
-        fillIndex = try c.decodeIfPresent(Int.self, forKey: .fillIndex) ?? 0
-        fillStyle = try c.decodeIfPresent(FillStyle.self, forKey: .fillStyle) ?? .hachure
-        corner = try c.decodeIfPresent(CornerStyle.self, forKey: .corner) ?? .round
+        fillStyle = try c.decodeIfPresent(FillStyle.self, forKey: .fillStyle) ?? .solid
         opacity = try c.decodeIfPresent(Double.self, forKey: .opacity) ?? 1
-        strokeIndex = try c.decodeIfPresent(Int.self, forKey: .strokeIndex) ?? 1
+
+        // Migration. Scenes saved before colours went arbitrary carry palette
+        // indices; read those and convert rather than dropping someone's
+        // drawing on the floor.
+        if let hex = try c.decodeIfPresent(String.self, forKey: .stroke) {
+            stroke = HexColor.normalized(hex) ?? Palette.defaultStroke
+        } else {
+            let index = try c.decodeIfPresent(Int.self, forKey: .colorIndex) ?? 0
+            stroke = Palette.strokePresets[max(0, min(Palette.strokePresets.count - 1, index))].hex
+        }
+
+        if c.contains(.fill) {
+            let hex = try c.decodeIfPresent(String.self, forKey: .fill)
+            fill = hex.flatMap { HexColor.normalized($0) }
+        } else {
+            let index = try c.decodeIfPresent(Int.self, forKey: .fillIndex) ?? 0
+            // The old array reserved index 0 for "transparent"; the preset list
+            // does not, so every legacy index shifts down by one.
+            fill = index > 0 && index - 1 < Palette.fillPresets.count
+                ? Palette.fillPresets[index - 1].hex
+                : nil
+        }
+
+        if let width = try c.decodeIfPresent(Double.self, forKey: .strokeWidth) {
+            strokeWidth = width
+        } else {
+            let index = try c.decodeIfPresent(Int.self, forKey: .strokeIndex) ?? 1
+            strokeWidth = [1.1, 2.0, 3.4][max(0, min(2, index))]
+        }
+
+        if let radius = try c.decodeIfPresent(Double.self, forKey: .cornerRadius) {
+            cornerRadius = radius
+        } else {
+            let corner = try c.decodeIfPresent(String.self, forKey: .corner) ?? "round"
+            cornerRadius = corner == "sharp" ? 0 : 10
+        }
         seed = try c.decodeIfPresent(UInt64.self, forKey: .seed) ?? UInt64.random(in: 1...UInt64.max)
         points = try c.decodeIfPresent([CGPoint].self, forKey: .points) ?? []
         z = try c.decodeIfPresent(Int.self, forKey: .z) ?? 0
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(kind, forKey: .kind)
+        try c.encodeIfPresent(parentID, forKey: .parentID)
+        try c.encode(rect, forKey: .rect)
+        try c.encode(text, forKey: .text)
+        try c.encode(stroke, forKey: .stroke)
+        try c.encode(fill, forKey: .fill)
+        try c.encode(fillStyle, forKey: .fillStyle)
+        try c.encode(strokeWidth, forKey: .strokeWidth)
+        try c.encode(cornerRadius, forKey: .cornerRadius)
+        try c.encode(opacity, forKey: .opacity)
+        try c.encode(seed, forKey: .seed)
+        try c.encode(points, forKey: .points)
+        try c.encode(z, forKey: .z)
     }
 
     /// The rect to hit-test and frame against. Linear shapes keep their vector.

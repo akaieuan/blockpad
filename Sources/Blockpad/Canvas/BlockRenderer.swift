@@ -1,4 +1,5 @@
 import AppKit
+import BlockpadKit
 import CoreGraphics
 
 /// Crisp by default, sketchy on request.
@@ -22,16 +23,24 @@ enum BlockRenderer {
         NSFont.systemFont(ofSize: size, weight: weight)
     }
 
-    static func fontSize(forStroke index: Int) -> CGFloat {
-        switch index {
-        case 0: return 13
-        case 2: return 21
-        default: return 15
+    /// Text scales with stroke weight, so a bold outline carries bold-ish text
+    /// without a separate control.
+    static func fontSize(forStrokeWidth width: Double) -> CGFloat {
+        switch width {
+        case ..<1.4: return 13
+        case ..<2.6: return 15
+        case ..<4: return 18
+        default: return 21
         }
     }
 
-    static func measure(_ text: String, strokeIndex: Int) -> CGSize {
-        let font = canvasFont(size: fontSize(forStroke: strokeIndex))
+    /// Radius is clamped so a big number on a small box cannot invert the shape.
+    static func effectiveRadius(_ block: Block, rect r: CGRect) -> CGFloat {
+        max(0, min(CGFloat(block.cornerRadius), min(r.width, r.height) / 2))
+    }
+
+    static func measure(_ text: String, strokeWidth: Double) -> CGSize {
+        let font = canvasFont(size: fontSize(forStrokeWidth: strokeWidth))
         let bounds = (text as NSString).boundingRect(
             with: CGSize(width: 4000, height: 4000),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -119,7 +128,7 @@ enum BlockRenderer {
     private static func drawShape(_ block: Block, in ctx: CGContext, options: RenderOptions) {
         let r = block.rect.standardized
         guard r.width > 1, r.height > 1 else { return }
-        let color = options.theme.inkAdjusted(Palette.color(block.colorIndex), index: block.colorIndex)
+        let color = options.theme.inkAdjusted(Palette.color(block.stroke))
 
         var rough = Rough(seed: block.seed)
         let strokePath: CGPath
@@ -128,8 +137,9 @@ enum BlockRenderer {
             case .ellipse: strokePath = rough.ellipse(r)
             case .diamond: strokePath = rough.diamond(r)
             default:
-                strokePath = block.corner == .round
-                    ? rough.roundedRectangle(r, radius: min(cornerRadius, min(r.width, r.height) * 0.25))
+                let radius = effectiveRadius(block, rect: r)
+                strokePath = radius > 0.5
+                    ? rough.roundedRectangle(r, radius: radius)
                     : rough.rectangle(r)
             }
         } else {
@@ -141,7 +151,7 @@ enum BlockRenderer {
         ctx.saveGState()
         ctx.addPath(strokePath)
         ctx.setStrokeColor(color.cgColor)
-        ctx.setLineWidth(StrokeWeight.width(block.strokeIndex))
+        ctx.setLineWidth(CGFloat(block.strokeWidth))
         ctx.setLineCap(options.sketchy ? .round : .butt)
         ctx.setLineJoin(options.sketchy ? .round : .miter)
         ctx.strokePath()
@@ -151,11 +161,11 @@ enum BlockRenderer {
         let para = NSMutableParagraphStyle()
         para.alignment = .center
         para.lineBreakMode = .byTruncatingTail
-        let size = measure(block.text, strokeIndex: block.strokeIndex)
+        let size = measure(block.text, strokeWidth: block.strokeWidth)
         drawString(block.text,
                    in: CGRect(x: r.minX + 6, y: r.midY - size.height / 2,
                               width: max(1, r.width - 12), height: size.height),
-                   attrs: [.font: canvasFont(size: fontSize(forStroke: block.strokeIndex)),
+                   attrs: [.font: canvasFont(size: fontSize(forStrokeWidth: block.strokeWidth)),
                            .foregroundColor: color, .paragraphStyle: para],
                    in: ctx)
     }
@@ -165,7 +175,8 @@ enum BlockRenderer {
     /// winding rule punches holes.
     private static func drawFill(_ block: Block, in ctx: CGContext, rect r: CGRect,
                                  rough: inout Rough, options: RenderOptions) {
-        guard block.fillStyle != .none, let fill = Palette.fill(block.fillIndex) else { return }
+        guard block.fillStyle != .none, let hex = block.fill else { return }
+        let fill = Palette.color(hex)
 
         ctx.saveGState()
         ctx.addPath(smoothPath(for: block, rect: r))
@@ -176,7 +187,7 @@ enum BlockRenderer {
             ctx.setFillColor(fill.cgColor)
             ctx.fill(r)
         case .hachure:
-            let gap = 7 + StrokeWeight.width(block.strokeIndex) * 1.5
+            let gap = 7 + CGFloat(block.strokeWidth) * 1.5
             if options.sketchy {
                 ctx.addPath(rough.hachure(r, gap: gap))
             } else {
@@ -190,7 +201,7 @@ enum BlockRenderer {
                 ctx.addPath(path)
             }
             ctx.setStrokeColor(fill.blended(withFraction: 0.18, of: .black)?.cgColor ?? fill.cgColor)
-            ctx.setLineWidth(max(1.2, StrokeWeight.width(block.strokeIndex) * 0.75))
+            ctx.setLineWidth(max(1.2, CGFloat(block.strokeWidth) * 0.75))
             ctx.strokePath()
         case .none:
             break
@@ -211,10 +222,8 @@ enum BlockRenderer {
             p.closeSubpath()
             return p
         default:
-            // Proportional, not absolute: a flat 10pt radius turns a 24pt
-            // checkbox into a circle.
-            let radius = min(cornerRadius, min(r.width, r.height) * 0.25)
-            return block.corner == .round
+            let radius = effectiveRadius(block, rect: r)
+            return radius > 0.5
                 ? CGPath(roundedRect: r, cornerWidth: radius, cornerHeight: radius, transform: nil)
                 : CGPath(rect: r, transform: nil)
         }
@@ -222,9 +231,9 @@ enum BlockRenderer {
 
     private static func drawText(_ block: Block, in ctx: CGContext, options: RenderOptions) {
         guard !block.text.isEmpty else { return }
-        let color = options.theme.inkAdjusted(Palette.color(block.colorIndex), index: block.colorIndex)
+        let color = options.theme.inkAdjusted(Palette.color(block.stroke))
         drawString(block.text, in: block.rect.standardized,
-                   attrs: [.font: canvasFont(size: fontSize(forStroke: block.strokeIndex)),
+                   attrs: [.font: canvasFont(size: fontSize(forStrokeWidth: block.strokeWidth)),
                            .foregroundColor: color],
                    in: ctx)
     }
@@ -242,11 +251,11 @@ enum BlockRenderer {
         let p1 = block.rect.origin
         let p2 = CGPoint(x: block.rect.maxX, y: block.rect.maxY)
         guard hypot(p2.x - p1.x, p2.y - p1.y) > 1 else { return }
-        let color = options.theme.inkAdjusted(Palette.color(block.colorIndex), index: block.colorIndex)
+        let color = options.theme.inkAdjusted(Palette.color(block.stroke))
 
         ctx.saveGState()
         ctx.setStrokeColor(color.cgColor)
-        ctx.setLineWidth(StrokeWeight.width(block.strokeIndex))
+        ctx.setLineWidth(CGFloat(block.strokeWidth))
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
 
@@ -263,7 +272,7 @@ enum BlockRenderer {
 
         if block.kind == .arrow {
             let angle = atan2(p2.y - p1.y, p2.x - p1.x)
-            let headLength = 10 + StrokeWeight.width(block.strokeIndex) * 2.2
+            let headLength = 10 + CGFloat(block.strokeWidth) * 2.2
             let head = CGMutablePath()
             for spread in [CGFloat.pi * 0.85, -CGFloat.pi * 0.85] {
                 head.move(to: p2)
@@ -278,7 +287,7 @@ enum BlockRenderer {
 
     private static func drawPen(_ block: Block, in ctx: CGContext, options: RenderOptions) {
         guard block.points.count > 1 else { return }
-        let color = options.theme.inkAdjusted(Palette.color(block.colorIndex), index: block.colorIndex)
+        let color = options.theme.inkAdjusted(Palette.color(block.stroke))
         let path = CGMutablePath()
         path.move(to: block.points[0])
         for i in 1..<block.points.count {
@@ -289,7 +298,7 @@ enum BlockRenderer {
         ctx.saveGState()
         ctx.addPath(path)
         ctx.setStrokeColor(color.cgColor)
-        ctx.setLineWidth(StrokeWeight.width(block.strokeIndex))
+        ctx.setLineWidth(CGFloat(block.strokeWidth))
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
         ctx.strokePath()

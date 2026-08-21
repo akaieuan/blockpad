@@ -1,4 +1,5 @@
 import SwiftUI
+import BlockpadKit
 
 /// The inspector rail.
 ///
@@ -101,42 +102,47 @@ struct PropertiesPanel: View {
         var rows: [RowSpec] = []
 
         rows.append(RowSpec(id: "stroke", glyph: "scribble", label: "Stroke") {
-            AnyView(Swatches(colors: Palette.colors.map { Color(nsColor: $0) },
-                             names: Palette.names,
-                             selected: style.colorIndex) { index in
-                store.style.colorIndex = index
-                canvas()?.applyStyle({ $0.colorIndex = index }, name: "Stroke Colour")
+            AnyView(ColorControl(current: style.stroke,
+                                 presets: Palette.strokePresets,
+                                 recents: store.recentColors,
+                                 allowsNone: false) { hex in
+                guard let hex else { return }
+                store.style.stroke = hex
+                store.noteRecent(hex)
+                canvas()?.applyStyle({ $0.stroke = hex }, name: "Stroke Colour")
             })
         })
 
-        rows.append(RowSpec(id: "weight", glyph: "lineweight", label: "Weight") {
-            AnyView(Segments(count: StrokeWeight.names.count,
-                             selected: style.strokeIndex,
-                             names: StrokeWeight.names) { index in
-                WeightGlyph(level: index)
-            } action: { index in
-                store.style.strokeIndex = index
-                canvas()?.applyStyle({ $0.strokeIndex = index }, name: "Stroke Width")
+        rows.append(RowSpec(id: "weight", glyph: "lineweight", label: "Weight",
+                            value: format(style.strokeWidth)) {
+            AnyView(NumberControl(value: style.strokeWidth,
+                                  range: StrokeWeight.range,
+                                  step: 0.5,
+                                  presets: StrokeWeight.presets.map(\.width)) { width in
+                store.style.strokeWidth = width
+                canvas()?.applyStyle({ $0.strokeWidth = width }, name: "Stroke Width")
             })
         })
 
         if showsFill {
             rows.append(RowSpec(id: "fill", glyph: "paintbrush", label: "Fill") {
-                AnyView(Swatches(colors: Palette.fills.map { $0.map { Color(nsColor: $0) } },
-                                 names: Palette.fillNames,
-                                 selected: style.fillIndex) { index in
-                    store.style.fillIndex = index
+                AnyView(ColorControl(current: style.fill,
+                                     presets: Palette.fillPresets,
+                                     recents: store.recentColors,
+                                     allowsNone: true) { hex in
+                    store.style.fill = hex
+                    if let hex { store.noteRecent(hex) }
                     canvas()?.applyStyle({ block in
                         guard block.kind.takesFill else { return }
-                        block.fillIndex = index
-                        // Picking a colour while the style is none is a request
+                        block.fill = hex
+                        // Choosing a colour while the style is none is a request
                         // to see it, not a no-op.
-                        if index > 0, block.fillStyle == .none { block.fillStyle = .solid }
+                        if hex != nil, block.fillStyle == .none { block.fillStyle = .solid }
                     }, name: "Fill")
                 })
             })
 
-            if style.fillIndex > 0 {
+            if style.fill != nil {
                 rows.append(RowSpec(id: "pattern", glyph: "square.on.square.dashed", label: "Pattern") {
                     AnyView(Segments(count: FillStyle.allCases.count,
                                      selected: FillStyle.allCases.firstIndex(of: style.fillStyle) ?? 0,
@@ -150,15 +156,14 @@ struct PropertiesPanel: View {
                 })
             }
 
-            rows.append(RowSpec(id: "corners", glyph: "app.dashed", label: "Corners") {
-                AnyView(Segments(count: CornerStyle.allCases.count,
-                                 selected: CornerStyle.allCases.firstIndex(of: style.corner) ?? 0,
-                                 names: CornerStyle.allCases.map(\.label)) { index in
-                    CornerGlyph(rounded: CornerStyle.allCases[index] == .round)
-                } action: { index in
-                    let value = CornerStyle.allCases[index]
-                    store.style.corner = value
-                    canvas()?.applyStyle({ $0.corner = value }, name: "Edges")
+            rows.append(RowSpec(id: "radius", glyph: "app.dashed", label: "Radius",
+                                value: format(style.cornerRadius)) {
+                AnyView(NumberControl(value: style.cornerRadius,
+                                      range: 0...120,
+                                      step: 1,
+                                      presets: [0, 4, 8, 12, 24, 999]) { radius in
+                    store.style.cornerRadius = radius
+                    canvas()?.applyStyle({ $0.cornerRadius = radius }, name: "Radius")
                 })
             })
         }
@@ -247,6 +252,11 @@ struct PropertiesPanel: View {
                     .labelsHidden())
             }
         ]
+    }
+
+    /// Trims a trailing .0 so "2" does not read as "2.0" in a 190pt rail.
+    private func format(_ value: Double) -> String {
+        value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value)
     }
 
     private var frameLabel: String {
