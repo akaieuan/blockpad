@@ -71,6 +71,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         clear.target = self
         menu.addItem(clear)
 
+        // Temporary: verifies Accessibility trust and window-title reading
+        // during M1 Task 4. Removed before M1 ships.
+        let probe = NSMenuItem(title: "Debug: Probe Frontmost", action: #selector(probeFrontmost), keyEquivalent: "")
+        probe.target = self
+        menu.addItem(probe)
+
         menu.addItem(.separator())
 
         let quit = NSMenuItem(title: "Quit Blockpad", action: #selector(quit), keyEquivalent: "q")
@@ -90,6 +96,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func togglePanel() { controller.toggle() }
 
     @objc private func clearCanvas() { CanvasHost.shared?.clearAll() }
+
+    @objc private func probeFrontmost() {
+        AccessibilityGate.requestIfNeeded()
+        guard let target = PanelController.shared?.pendingTarget else {
+            NSLog("Blockpad probe: no pending target")
+            return
+        }
+        let title = FrontmostWindow.title(forProcessID: target.processIdentifier)
+        NSLog("Blockpad probe: trusted=%@ secureInput=%@ bundle=%@ title=%@",
+              String(AccessibilityGate.isTrusted),
+              String(AccessibilityGate.isSecureInputActive),
+              target.bundleIdentifier ?? "nil",
+              title ?? "nil")
+    }
 
     @objc private func quit() {
         store.save()
