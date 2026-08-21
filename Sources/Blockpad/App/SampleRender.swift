@@ -60,6 +60,29 @@ enum SampleRender {
 }
 
 extension SampleRender {
+    /// Renders a scene supplied as JSON. Exists so a reconstruction from a tree
+    /// can be rendered and compared against the original drawing, rather than
+    /// judged by eye.
+    static func renderScene(inputPath: String, outputPath: String) {
+        let inputURL = URL(fileURLWithPath: inputPath)
+        guard let data = try? Data(contentsOf: inputURL) else {
+            print("could not read \(inputPath)"); return
+        }
+        guard let doc = try? JSONDecoder().decode(SketchDocument.self, from: data) else {
+            print("could not decode a scene from \(inputPath)"); return
+        }
+        let theme = CanvasTheme.all.first { $0.name == doc.theme } ?? .paper
+        let options = RenderOptions(theme: theme, sketchy: doc.sketchy ?? false)
+        guard let png = SketchExport.renderPNGData(doc.blocks, options: options, scale: 2) else {
+            print("render failed"); return
+        }
+        try? png.write(to: URL(fileURLWithPath: outputPath))
+        print("wrote \(outputPath)  (\(doc.blocks.count) blocks)")
+        print(SketchExport.tree(doc.blocks))
+    }
+}
+
+extension SampleRender {
     /// Writes the §5 example into the live store so a freshly launched app has
     /// something worth photographing.
     static func seedDemoScene() {

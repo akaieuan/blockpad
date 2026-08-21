@@ -20,6 +20,13 @@ if let index = arguments.firstIndex(of: "--render-logo") {
     exit(0)
 }
 
+if let index = arguments.firstIndex(of: "--render-scene") {
+    let input = index + 1 < arguments.count ? arguments[index + 1] : ""
+    let output = index + 2 < arguments.count ? arguments[index + 2] : "./build/scene.png"
+    SampleRender.renderScene(inputPath: input, outputPath: output)
+    exit(0)
+}
+
 // Loads a known scene into the real store, so documentation screenshots show
 // the app doing its job rather than an empty canvas.
 if arguments.contains("--seed-demo") {

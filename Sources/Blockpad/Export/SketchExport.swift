@@ -97,7 +97,11 @@ enum SketchExport {
         var lines: [String] = []
         var signatures: [UUID: String] = [:]
         for block in visible { signatures[block.id] = signature(block, in: visible) }
-        emitSiblings(roots, in: visible, signatures: signatures, depth: 0, into: &lines)
+        // Roots are placed relative to the drawing's own top-left, so the tree
+        // never leaks wherever on the infinite canvas you happened to be.
+        let contentOrigin = visible.map(\.bounds).reduce(CGRect.null) { $0.union($1) }.origin
+        emitSiblings(roots, in: visible, signatures: signatures, depth: 0,
+                     contentOrigin: contentOrigin, into: &lines)
         return lines.joined(separator: "\n")
     }
 
@@ -106,6 +110,7 @@ enum SketchExport {
     /// ~120-token target in §5.
     private static func emitSiblings(_ siblings: [Block], in blocks: [Block],
                                      signatures: [UUID: String], depth: Int,
+                                     contentOrigin: CGPoint,
                                      into lines: inout [String]) {
         let list = ordered(siblings)
         var i = 0
@@ -115,9 +120,7 @@ enum SketchExport {
             while i + run < list.count, signatures[list[i + run].id] == sig { run += 1 }
             let group = Array(list[i..<(i + run)])
             emit(list[i], in: blocks, signatures: signatures, depth: depth,
-                 repeatCount: run, groupBounds: group.map { $0.rect.standardized }
-                    .reduce(CGRect.null) { $0.union($1) },
-                 into: &lines)
+                 group: group, contentOrigin: contentOrigin, into: &lines)
             i += run
         }
     }
@@ -130,7 +133,7 @@ enum SketchExport {
         let r = block.rect.standardized
         let children = ordered(blocks.filter { parent(of: $0, in: blocks)?.id == block.id })
         let childSignature = children.map { signature($0, in: blocks) }.joined(separator: "|")
-        return "\(block.kind.rawValue):\(Int(r.width))x\(Int(r.height)):\(block.text):\(block.colorIndex):[\(childSignature)]"
+        return "\(block.kind.rawValue):\(Int(r.width.rounded()))x\(Int(r.height.rounded())):\(block.text):\(block.colorIndex):[\(childSignature)]"
     }
 
     private static func parent(of block: Block, in blocks: [Block]) -> Block? {
@@ -160,27 +163,49 @@ enum SketchExport {
     }
 
     private static func emit(_ block: Block, in blocks: [Block], signatures: [UUID: String],
-                             depth: Int, repeatCount: Int, groupBounds: CGRect,
+                             depth: Int, group: [Block], contentOrigin: CGPoint,
                              into lines: inout [String]) {
         let indent = String(repeating: "  ", count: depth)
         let r = block.rect.standardized
+        let repeatCount = group.count
+        let groupBounds = group.map { $0.rect.standardized }.reduce(CGRect.null) { $0.union($1) }
         var parts: [String] = []
 
         switch block.kind {
         case .frame:
-            parts.append("Frame \(Int(r.width))x\(Int(r.height))")
+            parts.append("Frame \(Int(r.width.rounded()))x\(Int(r.height.rounded()))")
         case .text:
             parts.append("Text")
         case .box:
-            parts.append("Box \(Int(r.width))x\(Int(r.height))")
+            parts.append("Box \(Int(r.width.rounded()))x\(Int(r.height.rounded()))")
         default:
             parts.append(block.kind.label)
         }
 
         if repeatCount > 1 { parts.append("×\(repeatCount)") }
 
-        // A collapsed run is anchored by the whole run, not by its first member,
-        // or a stack of rows would claim to be at the top of its parent.
+        // Position is never optional. The old code emitted a word anchor only
+        // when something sat within 6% of a parent edge and appended nothing
+        // otherwise — so a box floating mid-container carried no position at
+        // all, which is most boxes anyone actually draws.
+        let reference: CGPoint = parent(of: block, in: blocks)
+            .map { $0.rect.standardized.origin } ?? contentOrigin
+        let offsetX = Int((groupBounds.minX - reference.x).rounded())
+        let offsetY = Int((groupBounds.minY - reference.y).rounded())
+        parts.append("@\(offsetX),\(offsetY)")
+
+        // A run collapses to a count plus the step between members, so ×6 stays
+        // cheap without throwing away where the other five are.
+        if repeatCount > 1, group.count > 1 {
+            let first = group[0].rect.standardized
+            let second = group[1].rect.standardized
+            let stepX = Int((second.minX - first.minX).rounded())
+            let stepY = Int((second.minY - first.minY).rounded())
+            parts.append("step \(stepX),\(stepY)")
+        }
+
+        // Word anchors still earn their place when they apply — "full-height"
+        // says something coordinates do not.
         if block.kind != .frame, let anchor = anchor(of: groupBounds, in: block, blocks: blocks) {
             parts.append(anchor)
         }
@@ -192,7 +217,8 @@ enum SketchExport {
         lines.append(indent + parts.joined(separator: "  "))
 
         let children = blocks.filter { parent(of: $0, in: blocks)?.id == block.id }
-        emitSiblings(children, in: blocks, signatures: signatures, depth: depth + 1, into: &lines)
+        emitSiblings(children, in: blocks, signatures: signatures, depth: depth + 1,
+                     contentOrigin: contentOrigin, into: &lines)
     }
 
     /// Where the block sits inside its parent, in words the model can act on.
@@ -242,8 +268,11 @@ enum SketchExport {
             guard let png = renderPNGData(blocks, options: options) else { return "Nothing to copy" }
             item.setData(png, forType: .png)
         case .treeAndImage:
-            item.setString(text, forType: .string)
+            // PNG first. Pasteboard type order is priority order, and writing
+            // the string first meant every app took the text and silently
+            // dropped the image.
             if let png = renderPNGData(blocks, options: options) { item.setData(png, forType: .png) }
+            item.setString(text, forType: .string)
         }
 
         pb.writeObjects([item])
