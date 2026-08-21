@@ -21,6 +21,8 @@ final class PanelController {
     /// delivery, but the capture point is the part that's easy to get wrong.
     private(set) var pendingTarget: NSRunningApplication?
 
+    let deliverer = Deliverer()
+
     private var showStartedAt: CFAbsoluteTime = 0
     private var cancellables = Set<AnyCancellable>()
 
@@ -114,6 +116,15 @@ final class PanelController {
         panel.orderOut(nil)
         // Hand focus back where it came from so the loop stays where you were.
         pendingTarget?.activate()
+    }
+
+    /// Hides without re-activating the target. The deliverer owns activation
+    /// during a send, and two activations racing each other is how a paste
+    /// lands in the wrong window.
+    func hideForDelivery() {
+        CanvasHost.shared?.commitEditor()
+        store.save()
+        panel.orderOut(nil)
     }
 }
 
