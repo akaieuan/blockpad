@@ -9,9 +9,12 @@ struct GlassSurface: ViewModifier {
 
     func body(content: Content) -> some View {
         if #available(macOS 26.0, *) {
-            content.glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
+            content
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
+                .glassEffect(.regular, in: .rect(cornerRadius: cornerRadius))
         } else {
             content
+                .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
                 .background(
                     VisualEffect(material: .popover, blending: .withinWindow)
                         .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))

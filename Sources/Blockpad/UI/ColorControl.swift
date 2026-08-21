@@ -19,21 +19,63 @@ struct ColorControl: View {
 
     private let columns = [GridItem(.adaptive(minimum: 18), spacing: 6)]
 
+    /// How many presets sit in the row itself. Four is what fits beside a label
+    /// in a 172pt rail without the row wrapping.
+    private static let inlineCount = 4
+
     var body: some View {
-        Button { open.toggle() } label: {
-            swatch(current, size: 15)
-                .frame(width: 26, height: 22)
+        HStack(spacing: 3.5) {
+            if allowsNone {
+                inlineChip(nil)
+            }
+            ForEach(presets.prefix(allowsNone ? Self.inlineCount - 1 : Self.inlineCount)) { preset in
+                inlineChip(preset.hex, name: preset.name)
+            }
+
+            // Opens the full range: every preset, recents, RGB channels, hex.
+            Button { open.toggle() } label: {
+                ZStack {
+                    swatch(current, size: 16, showsSelection: false)
+                    // A ring only when the current colour is not one of the
+                    // chips beside it, so the row shows where you actually are.
+                    Circle()
+                        .strokeBorder(Token.accent, lineWidth: 1.6)
+                        .padding(-2.5)
+                        .opacity(isCustom ? 1 : 0)
+                }
+                .frame(width: 22, height: 22)
                 .background(
                     RoundedRectangle(cornerRadius: Token.Radius.micro, style: .continuous)
                         .fill(hovering || open ? Color.primary.opacity(Token.Ink.hover) : .clear)
                 )
                 .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help("\(current ?? "No fill") — more colours")
+            .popover(isPresented: $open, arrowEdge: .leading) { picker }
+        }
+        .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+
+    /// True when the colour came from the picker rather than a visible chip.
+    private var isCustom: Bool {
+        let inline = presets.prefix(allowsNone ? Self.inlineCount - 1 : Self.inlineCount).map(\.hex)
+        if current == nil { return !allowsNone }
+        return !inline.contains(current!)
+    }
+
+    private func inlineChip(_ hex: String?, name: String? = nil) -> some View {
+        Button {
+            onChange(hex)
+            hexField = hex ?? ""
+        } label: {
+            swatch(hex, size: 12)
+                .frame(width: 15, height: 20)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .onHover { hovering = $0 }
-        .help(current ?? "No fill")
-        .popover(isPresented: $open, arrowEdge: .leading) { picker }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+        .help(name ?? hex ?? "None")
     }
 
     private var picker: some View {
@@ -59,9 +101,32 @@ struct ColorControl: View {
                 }
             }
 
-            section("Custom") {
+            section("Channels") {
+                VStack(spacing: Token.Space.md) {
+                    ChannelSlider(label: "R", value: channels.r, channel: .red,
+                                  base: channels) { onChange(hex(replacing: .red, with: $0)) }
+                    ChannelSlider(label: "G", value: channels.g, channel: .green,
+                                  base: channels) { onChange(hex(replacing: .green, with: $0)) }
+                    ChannelSlider(label: "B", value: channels.b, channel: .blue,
+                                  base: channels) { onChange(hex(replacing: .blue, with: $0)) }
+                }
+            }
+
+            section("Hex") {
                 HStack(spacing: Token.Space.md) {
-                    // The system picker covers everything the presets do not.
+                    TextField("#RRGGBB", text: $hexField)
+                        .textFieldStyle(.roundedBorder)
+                        .font(Token.Text.value)
+                        .onSubmit {
+                            // Accepts #RGB, #RRGGBB, with or without the hash;
+                            // silently ignores anything that is not a colour.
+                            if let normalized = HexColor.normalized(hexField) {
+                                onChange(normalized)
+                            }
+                        }
+
+                    // The system panel stays available for eyedropper and the
+                    // colour spaces this popover does not try to reproduce.
                     ColorPicker("", selection: Binding(
                         get: { Color(nsColor: Palette.color(current ?? Palette.defaultStroke)) },
                         set: { newValue in
@@ -72,24 +137,33 @@ struct ColorControl: View {
                         }
                     ), supportsOpacity: false)
                     .labelsHidden()
-
-                    TextField("#RRGGBB", text: $hexField)
-                        .textFieldStyle(.roundedBorder)
-                        .font(Token.Text.value)
-                        .frame(width: 92)
-                        .onSubmit {
-                            // Accepts #RGB, #RRGGBB, with or without the hash;
-                            // silently ignores anything that is not a colour.
-                            if let normalized = HexColor.normalized(hexField) {
-                                onChange(normalized)
-                            }
-                        }
                 }
             }
         }
         .padding(Token.Space.xl)
-        .frame(width: 208)
+        .frame(width: 244)
         .onAppear { hexField = current ?? "" }
+        // Keeps the field honest when the colour changes from a swatch or a
+        // channel drag rather than from typing.
+        .onChange(of: current) { _, newValue in hexField = newValue ?? "" }
+    }
+
+    /// Current colour as 0...255 components, falling back to the default so the
+    /// channel sliders still have something to show when there is no fill.
+    private var channels: (r: Double, g: Double, b: Double) {
+        let c = HexColor.components(current ?? Palette.defaultStroke)
+            ?? (r: 0, g: 0, b: 0, a: 1)
+        return (c.r * 255, c.g * 255, c.b * 255)
+    }
+
+    private func hex(replacing channel: RGBChannel, with value: Double) -> String {
+        var (r, g, b) = channels
+        switch channel {
+        case .red: r = value
+        case .green: g = value
+        case .blue: b = value
+        }
+        return HexColor.string(r: r / 255, g: g / 255, b: b / 255)
     }
 
     @ViewBuilder
@@ -113,7 +187,7 @@ struct ColorControl: View {
         .help(name ?? hex ?? "None")
     }
 
-    private func swatch(_ hex: String?, size: CGFloat) -> some View {
+    private func swatch(_ hex: String?, size: CGFloat, showsSelection: Bool = true) -> some View {
         ZStack {
             Circle().fill(hex.map { Color(nsColor: Palette.color($0)) } ?? .clear)
             Circle().strokeBorder(Color.primary.opacity(hex == nil ? 0.22 : 0.14), lineWidth: 1)
@@ -128,9 +202,85 @@ struct ColorControl: View {
             Circle()
                 .strokeBorder(Token.accent, lineWidth: 1.8)
                 .padding(-2.5)
-                .opacity(hex == current ? 1 : 0)
+                .opacity(showsSelection && hex == current ? 1 : 0)
         }
         .frame(width: size, height: size)
+    }
+}
+
+enum RGBChannel { case red, green, blue }
+
+/// One channel: a gradient track showing what the colour becomes as you drag,
+/// plus a 0–255 field for when you know the number you want.
+private struct ChannelSlider: View {
+    let label: String
+    let value: Double
+    let channel: RGBChannel
+    let base: (r: Double, g: Double, b: Double)
+    let onChange: (Double) -> Void
+
+    @State private var text: String = ""
+    @FocusState private var focused: Bool
+
+    var body: some View {
+        HStack(spacing: Token.Space.lg) {
+            Text(label)
+                .font(Token.Text.micro)
+                .foregroundStyle(.primary.opacity(Token.Ink.secondary))
+                .frame(width: 9, alignment: .leading)
+
+            ZStack {
+                // The track previews the result, so you can aim rather than
+                // guess — the whole reason to have channels and not just hex.
+                Capsule()
+                    .fill(LinearGradient(colors: [endpoint(0), endpoint(255)],
+                                         startPoint: .leading, endPoint: .trailing))
+                    .frame(height: 4)
+                Slider(value: Binding(get: { value }, set: { onChange($0.rounded()) }),
+                       in: 0...255)
+                    .controlSize(.mini)
+                    .opacity(0.85)
+            }
+
+            TextField("", text: $text)
+                .textFieldStyle(.plain)
+                .font(Token.Text.value)
+                .monospacedDigit()
+                .multilineTextAlignment(.trailing)
+                .frame(width: 26)
+                .focused($focused)
+                .onSubmit(commit)
+                .onChange(of: focused) { _, isFocused in if !isFocused { commit() } }
+                .padding(.horizontal, 3)
+                .padding(.vertical, 1)
+                .background(
+                    RoundedRectangle(cornerRadius: Token.Radius.micro, style: .continuous)
+                        .fill(Color.primary.opacity(Token.Ink.sunken))
+                )
+        }
+        .onAppear { text = String(Int(value)) }
+        // Not while typing, or the field fights the keystrokes.
+        .onChange(of: value) { _, newValue in
+            if !focused { text = String(Int(newValue)) }
+        }
+    }
+
+    private func commit() {
+        guard let entered = Double(text.trimmingCharacters(in: .whitespaces)) else {
+            text = String(Int(value))
+            return
+        }
+        onChange(min(255, max(0, entered.rounded())))
+    }
+
+    private func endpoint(_ channelValue: Double) -> Color {
+        var (r, g, b) = base
+        switch channel {
+        case .red: r = channelValue
+        case .green: g = channelValue
+        case .blue: b = channelValue
+        }
+        return Color(.sRGB, red: r / 255, green: g / 255, blue: b / 255)
     }
 }
 
@@ -159,7 +309,7 @@ struct NumberControl: View {
                 .font(Token.Text.value)
                 .monospacedDigit()
                 .foregroundStyle(.primary.opacity(Token.Ink.primary))
-                .frame(width: 34, height: Token.Size.control)
+                .frame(width: 30, height: Token.Size.control)
                 .contentShape(Rectangle())
                 .gesture(
                     DragGesture(minimumDistance: 1)
@@ -188,7 +338,7 @@ struct NumberControl: View {
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
-                .frame(width: 14, height: Token.Size.control)
+                .frame(width: 13, height: Token.Size.control)
             }
         }
         .padding(1.5)
@@ -219,7 +369,7 @@ struct NumberControl: View {
             Image(systemName: symbol)
                 .font(.system(size: 8, weight: .bold))
                 .foregroundStyle(.primary.opacity(enabled ? Token.Ink.secondary : Token.Ink.tertiary * 0.5))
-                .frame(width: 16, height: Token.Size.control)
+                .frame(width: 15, height: Token.Size.control)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

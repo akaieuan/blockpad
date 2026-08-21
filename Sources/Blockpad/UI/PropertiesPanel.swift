@@ -33,14 +33,17 @@ struct PropertiesPanel: View {
                 VStack(spacing: 0) {
                     if showsShapeProperties { shapeRows } else { canvasRows }
                 }
+                .fixedSize(horizontal: true, vertical: false)
             }
             .scrollBounceBehavior(.basedOnSize)
             .scrollIndicators(.never)
         }
         .padding(.bottom, Token.Space.md)
-        .frame(width: width, alignment: .leading)
+        .frame(minWidth: width, alignment: .leading)
         .frame(maxHeight: maxHeight)
-        .fixedSize(horizontal: false, vertical: true)
+        // Width comes from the widest row, not from a guess. Height still
+        // yields to maxHeight so the rail scrolls rather than passing the dock.
+        .fixedSize(horizontal: true, vertical: true)
         .glassSurface()
         .animation(.easeOut(duration: 0.16), value: showsShapeProperties)
         .animation(.easeOut(duration: 0.16), value: showsFill)
@@ -113,8 +116,7 @@ struct PropertiesPanel: View {
             })
         })
 
-        rows.append(RowSpec(id: "weight", glyph: "lineweight", label: "Weight",
-                            value: format(style.strokeWidth)) {
+        rows.append(RowSpec(id: "weight", glyph: "lineweight", label: "Weight") {
             AnyView(NumberControl(value: style.strokeWidth,
                                   range: StrokeWeight.range,
                                   step: 0.5,
@@ -156,8 +158,7 @@ struct PropertiesPanel: View {
                 })
             }
 
-            rows.append(RowSpec(id: "radius", glyph: "app.dashed", label: "Radius",
-                                value: format(style.cornerRadius)) {
+            rows.append(RowSpec(id: "radius", glyph: "app.dashed", label: "Radius") {
                 AnyView(NumberControl(value: style.cornerRadius,
                                       range: 0...120,
                                       step: 1,
@@ -178,7 +179,7 @@ struct PropertiesPanel: View {
                 }
             ), in: 0.1...1)
             .controlSize(.mini)
-            .frame(width: 68))
+            .frame(width: 60))
         })
 
         if hasSelection {
@@ -254,11 +255,6 @@ struct PropertiesPanel: View {
         ]
     }
 
-    /// Trims a trailing .0 so "2" does not read as "2.0" in a 190pt rail.
-    private func format(_ value: Double) -> String {
-        value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value)
-    }
-
     private var frameLabel: String {
         guard let size = store.frameSize else { return "None" }
         return FramePreset.all.first { $0.size == size }?.name ?? "Custom"
@@ -300,10 +296,13 @@ private struct Row: View {
                     .font(Token.Text.value)
                     .monospacedDigit()
                     .foregroundStyle(.primary.opacity(Token.Ink.tertiary))
+                    .lineLimit(1)
+                    .fixedSize()
             }
             spec.content()
         }
         .padding(.horizontal, Token.Size.separatorInset)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: Token.Size.row)
         .modifier(SeparatorIfNeeded(isLast: isLast, leadingInset: leadingInset))
     }
