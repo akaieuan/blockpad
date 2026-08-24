@@ -143,7 +143,10 @@ trailing edge, hairline between.
 
 ## The mark is the operation
 
-**Assets:** `docs/logo/logo.svg`, `logo-2048.png`, `logo-1024.png`, `logo-512.png`.
+**Assets:** `docs/logo/` holds both schemes — `logo-light.svg` and `logo-dark.svg`
+as vectors, plus `logo-{light,dark}-{512,1024,2048}.png`. The dark card is the app
+icon; the light one is for white pages. Both are generated from `IconRender`, so the
+vector and the raster cannot drift.
 
 A white squircle on Apple's icon geometry — 22.37% continuous corner radius,
 inset in its canvas — holding three blocks from the app's own palette: slate as

@@ -1,11 +1,11 @@
-Frame 1440x900  "Desktop"
-  Box 480x900  @right-full-height  [slate]
-    Box 136x40  @left-top  "All"
-    Box 136x40  @top  "Active"
-    Box 136x40  @top  "Archived"
-    Box 424x64  ×6  @left
-      Box 24x24  @left  [sage]
-    Box 200x56  @left-bottom  "Reset"  [slate]
-    Box 200x56  @bottom  "Apply"  [dusty red]
-  Text  @left-top  "main content unchanged"  [slate]
-  Text  @left  "panel becomes bottom drawer under 768"  [amber]
+Frame 1440x900  @0,0  "Desktop"
+  Box 480x900  @960,0  @right-full-height  stroke #55677A  fill #E5E3DF
+    Box 136x40  @24,32  @left-top  "All"  fill #DAE5EF
+    Box 136x40  @168,32  @top  "Active"
+    Box 136x40  @312,32  @top  "Archived"
+    Box 424x64  ×6  @24,112  step 0,88  @left
+      Box 24x24  @16,20  @left  stroke #6E8B6A
+    Box 200x56  @24,800  @left-bottom  "Reset"  stroke #55677A
+    Box 200x56  @248,800  @bottom  "Apply"  stroke #B4534A  fill #F6DAD5
+  Text  @40,40  @left-top  "main content unchanged"  stroke #55677A
+  Text  @40,76  @left  "panel becomes bottom drawer under 768"  stroke #C08A2E

@@ -1,5 +1,8 @@
 <div align="center">
-<img src="docs/icon.png" width="128" alt="Blockpad">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/logo/logo-dark-512.png">
+  <img src="docs/logo/logo-light-512.png" width="128" alt="Blockpad">
+</picture>
 
 # Blockpad
 
@@ -35,6 +38,12 @@ Blockpad is one hotkey and one canvas. `Ctrl+Opt+B`, drag four boxes,
 `Cmd+Return`, paste. No model inside it, no account, no subscription, nothing
 agent-initiated, and it never leaves your machine. It is a faster input device
 for one specific moment, and the constraint is the product.
+
+<div align="center">
+<img src="docs/in-context.png" width="820" alt="Blockpad floating over a coding agent session">
+<br>
+<sub>It opens over whatever you are already in. The session behind is blurred; the sketch is not.</sub>
+</div>
 
 Two things follow, and they are the point:
 
@@ -85,28 +94,34 @@ no model, no API call.
 The sketch above becomes this:
 
 ```
-Frame 1440x900  "Desktop"
-  Box 480x900  @right-full-height  [slate]
-    Box 136x40  @left-top  "All"
-    Box 136x40  @top  "Active"
-    Box 136x40  @top  "Archived"
-    Box 424x64  ×6  @left
-      Box 24x24  @left  [sage]
-    Box 200x56  @left-bottom  "Reset"  [slate]
-    Box 200x56  @bottom  "Apply"  [dusty red]
-  Text  @left-top  "main content unchanged"  [slate]
-  Text  @left  "panel becomes bottom drawer under 768"  [amber]
+Frame 1440x900  @0,0  "Desktop"
+  Box 480x900  @960,0  @right-full-height  stroke #55677A  fill #E5E3DF
+    Box 136x40  @24,32  @left-top  "All"  fill #DAE5EF
+    Box 136x40  @168,32  @top  "Active"
+    Box 136x40  @312,32  @top  "Archived"
+    Box 424x64  ×6  @24,112  step 0,88  @left
+      Box 24x24  @16,20  @left  stroke #6E8B6A
+    Box 200x56  @24,800  @left-bottom  "Reset"  stroke #55677A
+    Box 200x56  @248,800  @bottom  "Apply"  stroke #B4534A  fill #F6DAD5
+  Text  @40,40  @left-top  "main content unchanged"  stroke #55677A
+  Text  @40,76  @left  "panel becomes bottom drawer under 768"  stroke #C08A2E
 ```
+
+Every block carries an offset from its parent, so the layout reconstructs
+exactly rather than approximately. Colours are hex, not names — `#55677A` is a
+value the receiving agent can paste into CSS, where `[slate]` would have been a
+lookup it could not perform. Repeats collapse to a count plus the step between
+them, so `×6` stays cheap without discarding where the other five are.
 
 Measured on that exact scene:
 
 | Mode | Cost | Use |
 |---|---|---|
-| **Tree only** | **~117 tokens** | Default. Structural changes, layout specs. |
-| Tree + image | ~2,100 tokens | When proportion or visual feel matters. |
+| **Tree only** | **~166 tokens** | Default. Structural changes, layout specs. |
+| Tree + image | ~2,150 tokens | When proportion or feel matters. |
 | Image only | ~1,981 tokens | Annotated screenshots, where the tree is meaningless. |
 
-Roughly **17× cheaper**, and structurally *more* precise — six identical rows
+Roughly **12× cheaper**, and structurally *more* precise — six identical rows
 collapse to `×6` with an exact count, rather than a model counting rectangles in
 a JPEG and getting five.
 
@@ -159,11 +174,12 @@ you used last, with the rest on a flyout.
 | `Cmd+Z` / `Shift+Cmd+Z` | undo / redo |
 | `Cmd+D` | duplicate · `Cmd+A` select all |
 | `Cmd+[` / `Cmd+]` | send backward / bring forward (`Shift` for all the way) |
-| `Cmd+0` / `Cmd+9` | zoom 100% / zoom to fit |
+| `Cmd+0` / `Cmd+9` | zoom 100% / centre on the drawing |
 | `Cmd+Backspace` | clear canvas |
 | double-click | edit text, or start a text block on empty canvas |
 | space-drag, scroll | pan · `Ctrl`- or `Cmd`-scroll or pinch zooms |
 | drag with guides on | edges and centres snap to nearby blocks |
+| viewfinder button | fits the drawing into the area the chrome is not covering |
 
 **Alignment guides** are worth calling out. Grid snapping gives tidy coordinates
 but not tidy layouts — two boxes can both sit on the grid and still look a step
@@ -171,6 +187,15 @@ out. Dragging solves the three interesting lines per axis against every other
 block, pulls to the nearest match, and draws a guide across the objects that
 share it. Multi-selection moves as a rigid body so its internal spacing cannot
 drift.
+
+### Styling
+
+Colour is arbitrary hex, not a fixed palette. Four presets stay inline in each
+row for the common case; the swatch opens RGB channel sliders with live gradient
+tracks, a hex field, the colours you reached for recently, the full preset set,
+and the system picker. Stroke width and corner radius are real numbers you can
+step, type, or drag to scrub. All of it lands in the tree as values the
+receiving agent can act on.
 
 ---
 
@@ -204,45 +229,47 @@ drift from the palette.
 
 ## State of play
 
-**M0 is done**, and then some. Panel, hotkey toggle, resizable persistent
-canvas, the full shape set, the tree serializer, and clipboard payload modes all
-work. Persistence and the serializer landed early because the tree was needed to
-test the central assumption at all.
+**M0 is done**, and the app has moved a long way past it.
 
-The look departed from the original plan twice, deliberately:
+Shapes are frame, rectangle, ellipse, diamond, arrow, line, freehand and text,
+with arbitrary hex colour on stroke and fill, numeric stroke width and corner
+radius, fill patterns, opacity and layer order. Alignment guides pull edges and
+centres to nearby blocks while you drag. A component drawer carries thirty-two
+blockouts across Layout, Controls, Data and Feedback — all of which land as
+plain blocks, because the tree stays the only contract.
 
-- **Crisp, not hand-drawn.** The plan argued roughness signals *provisional* and
-  stops a model reading proportions as exact. That risk turned out to be covered
+The design departed from the original plan three times, deliberately:
+
+- **Crisp, not hand-drawn.** §4 argued roughness signals *provisional* and stops
+  a model reading proportions as exact. That risk turned out to be covered
   elsewhere — the tree states coordinates and counts outright — so the default is
-  clean Figma-style geometry. The sketch renderer is one toggle away.
+  clean geometry. The sketch renderer is one toggle away.
 - **A dock, not a top bar.** The top edge of a drawing is where you look. Tools
-  live along the bottom, canvas settings sit behind one menu, and the inspector
-  is a collapsible rail of rows.
+  live along the bottom; the inspector is a collapsible rail of rows.
+- **Arbitrary colour.** §3 said five swatches and no picker, and §11 listed a
+  colour picker as a non-goal. Both reversed. The payload got better for it: hex
+  is actionable where a palette name was not.
 
-**Next up is M1: delivery.** Today Blockpad copies to the clipboard and you
-paste. M1 captures the frontmost app before the panel takes focus and pastes
-into it directly — text everywhere, images into editors, and a written-to-disk
-path for terminals, which is what makes CLI agents work at all. It is the
-riskiest milestone and the one the whole idea rests on.
+**Next is M1: delivery.** Today Blockpad copies and you paste. M1 captures the
+frontmost app before the panel takes focus and pastes into it directly — text
+everywhere, images into editors, and a written-to-disk path for terminals, which
+is what makes CLI agents work at all. The plan is in
+[docs/superpowers/plans](docs/superpowers/plans/2026-08-21-m1-delivery.md); the
+pure-logic half is built and tested, the paste itself is not yet wired.
 
 See [PLAN.md](PLAN.md) for the full design, the open questions, and the
 reasoning behind each decision.
 
 ---
 
-## Licence
-
-MIT. Fork it, ship it, sell it, take the tree format and build something better
-with it — no permission needed and no attribution beyond keeping the notice. See
-[LICENSE](LICENSE).
-
----
-
 ## Non-goals
 
-Not a design tool. No layers panel, no colour picker, no Figma export, no
-collaboration, no cloud, no account, no LLM inside the app, and no Windows until
-the Mac version is actually good.
+Not a design tool. No layers panel, no Figma export, no collaboration, no
+cloud, no account, no LLM inside the app, and no Windows until the Mac version
+is actually good.
+
+<sub>The colour picker used to be on this list. It is not any more — see State of
+play.</sub>
 
 ---
 
