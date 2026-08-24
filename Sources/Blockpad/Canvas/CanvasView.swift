@@ -17,6 +17,11 @@ final class CanvasView: NSView {
     private var isSpaceHeld = false
     private var guides: [AlignmentGuide] = []
 
+    /// What the floating chrome covers. Fitting to the raw bounds centres the
+    /// drawing behind the inspector and the dock, which looks like the button
+    /// is off rather than like the chrome is in the way.
+    var chromeInsets = NSEdgeInsets(top: 56, left: 24, bottom: 68, right: 24)
+
     private let gridStep: CGFloat = 8
     private let handleSize: CGFloat = 8
     private let minZoom: CGFloat = 0.1
@@ -534,17 +539,22 @@ final class CanvasView: NSView {
         zoom(by: value / store.zoom, around: CGPoint(x: bounds.midX, y: bounds.midY))
     }
 
+    /// Fits the drawing into the part of the canvas the chrome is not covering,
+    /// and centres it there. The arithmetic lives in `Viewport.fitting` so it can
+    /// be tested against a rail and a dock rather than eyeballed.
     func zoomToFit() {
-        guard !store.blocks.isEmpty else {
-            store.zoom = 1; store.pan = .zero; needsDisplay = true; return
-        }
-        let union = store.blocks.map(\.bounds).reduce(CGRect.null) { $0.union($1) }
-            .insetBy(dx: -60, dy: -60)
-        guard union.width > 0, union.height > 0 else { return }
-        let scale = min(bounds.width / union.width, bounds.height / union.height)
-        store.zoom = max(minZoom, min(maxZoom, scale))
-        store.pan = CGPoint(x: (bounds.width - union.width * store.zoom) / 2 - union.minX * store.zoom,
-                            y: (bounds.height - union.height * store.zoom) / 2 - union.minY * store.zoom)
+        let content = store.blocks.isEmpty
+            ? nil
+            : store.blocks.map(\.bounds).reduce(CGRect.null) { $0.union($1) }
+        let viewport = Viewport.fitting(content,
+                                        in: bounds,
+                                        insets: ChromeInsets(top: chromeInsets.top,
+                                                             left: chromeInsets.left,
+                                                             bottom: chromeInsets.bottom,
+                                                             right: chromeInsets.right),
+                                        zoomRange: minZoom...maxZoom)
+        store.zoom = viewport.zoom
+        store.pan = viewport.pan
         needsDisplay = true
     }
 

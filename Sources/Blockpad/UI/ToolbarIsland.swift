@@ -103,7 +103,7 @@ struct BottomControls: View {
                 ToolButton(symbol: "arrow.uturn.forward", help: "Redo   ⇧⌘Z", size: 28) {
                     canvas()?.redo()
                 }
-                ToolButton(symbol: "arrow.up.left.and.arrow.down.right", help: "Zoom to fit   ⌘9", size: 28) {
+                ToolButton(symbol: "viewfinder", help: "Centre on drawing   ⌘9", size: 28) {
                     canvas()?.zoomToFit(); refresh()
                 }
             }

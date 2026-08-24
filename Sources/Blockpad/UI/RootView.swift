@@ -28,7 +28,13 @@ struct RootView: View {
                 // Full-bleed canvas. All chrome floats above it rather than
                 // partitioning the window, which is what made the old bar read
                 // as a black stripe across the top.
-                CanvasRepresentable(store: store, onSend: send)
+                CanvasRepresentable(store: store,
+                                    chromeInsets: NSEdgeInsets(
+                                        top: 56,
+                                        left: store.inspectorOpen ? layout.inspectorWidth + 40 : 78,
+                                        bottom: 68,
+                                        right: store.libraryOpen ? 290 : 24),
+                                    onSend: send)
                     .ignoresSafeArea()
 
                 // The top edge carries only the copy action; the traffic lights
@@ -133,17 +139,20 @@ struct RootView: View {
 /// Bridges the AppKit canvas into the SwiftUI tree (§7).
 struct CanvasRepresentable: NSViewRepresentable {
     let store: SketchStore
+    var chromeInsets = NSEdgeInsets(top: 56, left: 24, bottom: 68, right: 24)
     let onSend: () -> Void
 
     func makeNSView(context: Context) -> CanvasView {
         let view = CanvasView(store: store)
         view.onSend = onSend
+        view.chromeInsets = chromeInsets
         CanvasHost.shared = view
         return view
     }
 
     func updateNSView(_ view: CanvasView, context: Context) {
         view.onSend = onSend
+        view.chromeInsets = chromeInsets
     }
 }
 
