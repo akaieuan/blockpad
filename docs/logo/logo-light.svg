@@ -2,28 +2,19 @@
   <title>Blockpad</title>
   <defs>
     <linearGradient id="card" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#F0F0F0"/>
+      <stop offset="0" stop-color="#F2F2F2"/>
       <stop offset="1" stop-color="#FFFFFF"/>
     </linearGradient>
-    <radialGradient id="contact">
-      <stop offset="0" stop-color="#000000" stop-opacity="0.20"/>
-      <stop offset="1" stop-color="#000000" stop-opacity="0"/>
-    </radialGradient>
-    <clipPath id="cardClip">
-      <rect x="96.26" y="96.26" width="831.49" height="831.49" rx="186.00" ry="186.00"/>
-    </clipPath>
   </defs>
   <rect x="96.26" y="96.26" width="831.49" height="831.49" rx="186.00" ry="186.00" fill="url(#card)"/>
-  <g clip-path="url(#cardClip)">
-    <ellipse cx="512.00" cy="772.46" rx="274.39" ry="82.32" fill="url(#contact)"/>
-  <polygon points="749.63,765.60 512.00,902.80 512.00,827.34 749.63,690.15" fill="#111115"/>
-  <polygon points="274.37,765.60 512.00,902.80 512.00,827.34 274.37,690.15" fill="#0B0B0E"/>
-  <polygon points="512.00,552.95 749.63,690.15 512.00,827.34 274.37,690.15" fill="#303035"/>
-  <polygon points="749.63,680.54 512.00,817.74 512.00,742.28 749.63,605.09" fill="#25252B"/>
-  <polygon points="274.37,680.54 512.00,817.74 512.00,742.28 274.37,605.09" fill="#18181B"/>
-  <polygon points="512.00,467.89 749.63,605.09 512.00,742.28 274.37,605.09" fill="#494950"/>
-  <polygon points="749.63,595.48 512.00,732.68 512.00,657.22 749.63,520.02" fill="#AE510F"/>
-  <polygon points="274.37,595.48 512.00,732.68 512.00,657.22 274.37,520.02" fill="#70340A"/>
-  <polygon points="512.00,382.83 749.63,520.02 512.00,657.22 274.37,520.02" fill="#F9812D"/>
+  <g stroke="#16161B" stroke-opacity="0.38" stroke-width="16.63" stroke-linecap="round">
+    <line x1="512.00" y1="512.00" x2="793.92" y2="349.24"/>
+    <line x1="512.00" y1="512.00" x2="230.08" y2="349.24"/>
+    <line x1="512.00" y1="512.00" x2="512.00" y2="837.53"/>
+  </g>
+  <g>
+    <polygon points="766.77,417.96 766.77,659.09 557.94,779.66 557.94,538.52" fill="#2D2D34"/>
+    <polygon points="257.23,417.96 466.06,538.52 466.06,779.66 257.23,659.09" fill="#16161B"/>
+    <polygon points="512.00,217.82 720.83,338.39 512.00,458.95 303.17,338.39" fill="#F97316"/>
   </g>
 </svg>

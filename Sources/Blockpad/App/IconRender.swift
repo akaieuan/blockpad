@@ -1,23 +1,28 @@
 import AppKit
 import CoreGraphics
 
-/// Draws the app icon: a pad of blocks, in isometric, on a card.
+/// Draws the app icon: a cube held open along its own seams.
 ///
-/// The mark is the name. Three slabs stacked with an orange one on top read as
-/// a *pad of blocks* — a physical thing you take the top sheet off — where the
-/// old mark's flat rectangles only ever read as "a layout". Everything is
-/// expressed in units of the card width, so every size is the same drawing.
+/// The mark is a single isometric cube whose three faces are pushed apart along
+/// their normals, with the cube's three interior edges left drawn as hairlines
+/// in the gaps. So it reads two ways at once — a block, and blocks connected by
+/// lines — which is the product. The faces are flat: three tones and no
+/// gradients, because the geometry already carries the depth and shading it
+/// would only make it look rendered.
+///
+/// Everything is expressed in units of the card width, so every size is the
+/// same drawing rather than a set of drawings that drift.
 enum IconRender {
 
     // MARK: - Brand
 
-    /// The one saturated colour in the mark. It is the same in both schemes —
-    /// the orange is the brand, the ink is only ever contrast.
+    /// The one saturated colour in the mark, identical in both schemes. The
+    /// orange is the brand; the ink is only ever contrast.
     static let orange = NSColor(srgbRed: 0.976, green: 0.451, blue: 0.086, alpha: 1)  // #F97316
 
-    /// Light and dark are not the same drawing recoloured slightly: the two ink
-    /// slabs invert with the card. Dark slabs on a black card are black on
-    /// black, and the stack — which is the entire idea — disappears.
+    /// Light and dark are not one drawing recoloured. The two ink faces invert
+    /// with the card: dark faces on a near-black card are black on black, and
+    /// the cube disappears.
     enum Scheme: String, CaseIterable {
         case light, dark
 
@@ -28,26 +33,53 @@ enum IconRender {
             }
         }
 
-        /// Which way the card's gradient runs, and the strength of it.
-        var cardLift: CGFloat { self == .light ? -0.06 : 0.10 }
-
-        /// Bottom then middle slab, darkest first in reading order.
-        var slabs: [NSColor] {
+        /// The right face catches more light than the left in both schemes —
+        /// that difference is the only thing making a flat hexagon read as a
+        /// solid, so it survives the inversion.
+        var rightFace: NSColor {
             switch self {
-            case .light:
-                return [NSColor(srgbRed: 0.098, green: 0.098, blue: 0.118, alpha: 1),  // #19191E
-                        NSColor(srgbRed: 0.208, green: 0.208, blue: 0.239, alpha: 1)]  // #35353D
-            case .dark:
-                return [NSColor(srgbRed: 0.408, green: 0.408, blue: 0.447, alpha: 1),  // #686872
-                        NSColor(srgbRed: 0.612, green: 0.612, blue: 0.655, alpha: 1)]  // #9C9CA7
+            case .light: return NSColor(srgbRed: 0.176, green: 0.176, blue: 0.204, alpha: 1)  // #2D2D34
+            case .dark:  return NSColor(srgbRed: 0.639, green: 0.639, blue: 0.682, alpha: 1)  // #A3A3AE
             }
         }
 
-        var contactOpacity: CGFloat { self == .light ? 0.20 : 0.60 }
+        var leftFace: NSColor {
+            switch self {
+            case .light: return NSColor(srgbRed: 0.086, green: 0.086, blue: 0.106, alpha: 1)  // #16161B
+            case .dark:  return NSColor(srgbRed: 0.427, green: 0.427, blue: 0.467, alpha: 1)  // #6D6D77
+            }
+        }
+
+        /// The seams. Hairline weight and well under full contrast, so they read
+        /// as structure rather than as a second subject.
+        var seam: NSColor {
+            switch self {
+            case .light: return NSColor(srgbRed: 0.086, green: 0.086, blue: 0.106, alpha: 0.38)
+            case .dark:  return NSColor(white: 1, alpha: 0.42)
+            }
+        }
+
+        /// Which way the card's own gradient runs.
+        var cardLift: CGFloat { self == .light ? -0.05 : 0.10 }
         var cardShadowOpacity: CGFloat { self == .light ? 0.22 : 0.45 }
         /// A white card needs a hairline or it vanishes on a white page.
         var needsHairline: Bool { self == .light }
     }
+
+    // MARK: - Proportions
+
+    /// Cube radius, as a fraction of the card width.
+    static let cubeRadius: CGFloat = 0.29
+    /// How far each face slides along its normal, as a fraction of the radius.
+    static let faceGap: CGFloat = 0.22
+    /// Seam weight, as a fraction of the card width.
+    static let seamWidth: CGFloat = 0.020
+    /// How far past the cube's centre-to-vertex span each seam runs.
+    static let seamOverrun: CGFloat = 0.35
+    /// Below this pixel size the seams would be sub-pixel and the gaps would
+    /// read as damage, so the cube is drawn closed and solid instead. Simplify
+    /// small rather than render the same thing badly.
+    static let detailThreshold: CGFloat = 64
 
     /// Sizes macOS wants in an .iconset.
     private static let variants: [(name: String, pixels: Int)] = [
@@ -72,7 +104,7 @@ enum IconRender {
         print("wrote \(variants.count) icon sizes to \(dir.path)")
     }
 
-    /// Oversized masters for the website and press use, plus the vector. Kept
+    /// Oversized masters for the website and press use, plus the vectors. Kept
     /// out of the .iconset, which rejects any filename outside Apple's fixed set.
     static func runLogo(outputDirectory: String) {
         let dir = URL(fileURLWithPath: outputDirectory)
@@ -99,44 +131,54 @@ enum IconRender {
     /// Apple's continuous-corner ratio for app icons.
     static func cardRadius(_ card: CGRect) -> CGFloat { card.width * 0.2237 }
 
-    /// Isometric projection into a y-up context. Depth recedes *downward* on
-    /// screen; getting that sign wrong turns every box into a bowtie.
-    private static func iso(_ x: CGFloat, _ y: CGFloat, _ z: CGFloat) -> CGPoint {
-        CGPoint(x: (x - y) * 0.8660254, y: -(x + y) * 0.5 + z)
-    }
+    /// A face of the exploded cube: the polygon, and which colour role it takes.
+    enum FaceRole { case top, right, left }
 
-    /// One slab, as its three visible faces. Returned in paint order.
+    /// The whole mark, in one place, so the raster and the vector cannot drift.
     ///
-    /// Shared by the raster and vector paths so the two cannot drift: the SVG is
-    /// the same polygons with the y axis flipped.
-    static func slabFaces(origin: CGPoint, unit u: CGFloat,
-                          width w: CGFloat, depth d: CGFloat, height h: CGFloat)
-        -> [(points: [CGPoint], shade: CGFloat)] {
-        func p(_ x: CGFloat, _ y: CGFloat, _ z: CGFloat) -> CGPoint {
-            let q = iso(x * u, y * u, z * u)
-            return CGPoint(x: origin.x + q.x, y: origin.y + q.y)
+    /// `open` is false at small sizes, which closes the gaps and returns the
+    /// three faces of a plain solid cube.
+    static func faces(in card: CGRect, open: Bool)
+        -> (faces: [(points: [CGPoint], role: FaceRole)], seams: [(CGPoint, CGPoint)]) {
+        let r = card.width * cubeRadius
+        let gap = open ? r * faceGap : 0
+        let k: CGFloat = 0.8660254
+        let o = CGPoint(x: card.midX, y: card.midY)
+
+        func v(_ dx: CGFloat, _ dy: CGFloat) -> CGPoint { CGPoint(x: o.x + dx, y: o.y + dy) }
+        let top = v(0, r), ur = v(k * r, r / 2), lr = v(k * r, -r / 2)
+        let bot = v(0, -r), ll = v(-k * r, -r / 2), ul = v(-k * r, r / 2)
+
+        // Each face travels along the normal of the cube face it stands for.
+        let dTop = CGPoint(x: 0, y: gap)
+        let dRight = CGPoint(x: k * gap, y: -gap / 2)
+        let dLeft = CGPoint(x: -k * gap, y: -gap / 2)
+
+        func moved(_ pts: [CGPoint], _ d: CGPoint) -> [CGPoint] {
+            pts.map { CGPoint(x: $0.x + d.x, y: $0.y + d.y) }
         }
-        return [
-            // Right face catches more light than the left; the top is brightest,
-            // which is what makes it read as a solid and not a flat hexagon.
-            ([p(w, 0, 0), p(w, d, 0), p(w, d, h), p(w, 0, h)], -0.30),
-            ([p(0, d, 0), p(w, d, 0), p(w, d, h), p(0, d, h)], -0.55),
-            ([p(0, 0, h), p(w, 0, h), p(w, d, h), p(0, d, h)], 0.10)
-        ]
+
+        // The cube's three interior edges. Drawn under the faces, so only the
+        // part bridging a gap is ever visible.
+        let reach = 1 + seamOverrun
+        let seams = open ? [ur, ul, bot].map { end in
+            (o, CGPoint(x: o.x + (end.x - o.x) * reach, y: o.y + (end.y - o.y) * reach))
+        } : []
+
+        return ([
+            (moved([ur, lr, bot, o], dRight), .right),
+            (moved([ul, o, bot, ll], dLeft), .left),
+            (moved([top, ur, o, ul], dTop), .top)
+        ], seams)
     }
 
-    /// The three slabs, bottom to top: two inks under one orange.
-    static func stack(in card: CGRect, scheme: Scheme)
-        -> (unit: CGFloat, base: CGPoint, colors: [NSColor]) {
-        (card.width * 0.165,
-         CGPoint(x: card.midX, y: card.minY + card.height * 0.36),
-         scheme.slabs + [orange])
+    static func color(for role: FaceRole, scheme: Scheme) -> NSColor {
+        switch role {
+        case .top: return orange
+        case .right: return scheme.rightFace
+        case .left: return scheme.leftFace
+        }
     }
-
-    /// Vertical rise between slabs, in units.
-    static let slabLift: CGFloat = 0.62
-    static let slabHeight: CGFloat = 0.55
-    static let slabSpan: CGFloat = 2
 
     // MARK: - Raster
 
@@ -160,7 +202,7 @@ enum IconRender {
                               cornerHeight: radius, transform: nil)
 
         // Shadow is skipped on the tiny sizes, where it only muddies the shape.
-        if s >= 64 {
+        if s >= detailThreshold {
             ctx.saveGState()
             ctx.setShadow(offset: CGSize(width: 0, height: -s * 0.018), blur: s * 0.05,
                           color: NSColor.black.withAlphaComponent(scheme.cardShadowOpacity).cgColor)
@@ -174,21 +216,13 @@ enum IconRender {
             ctx.fillPath()
         }
 
-        // Hairline keeps a white card from vanishing on a white page.
-        if scheme.needsHairline, s >= 128 {
-            ctx.addPath(squircle)
-            ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.08).cgColor)
-            ctx.setLineWidth(max(1, s * 0.004))
-            ctx.strokePath()
-        }
-
         ctx.saveGState()
         ctx.addPath(squircle)
         ctx.clip()
 
-        // Glass: one soft top-down gradient across the card itself. Subtle
-        // enough that it never competes with the mark.
-        if s >= 64 {
+        // Glass: one soft top-down gradient across the card. Subtle enough that
+        // it never competes with the mark.
+        if s >= detailThreshold {
             let gradient = CGGradient(
                 colorsSpace: CGColorSpaceCreateDeviceRGB(),
                 colors: [lighten(scheme.card, scheme.cardLift).cgColor,
@@ -200,35 +234,37 @@ enum IconRender {
                                    options: [])
         }
 
-        let (unit, base, colors) = stack(in: card, scheme: scheme)
+        let (faces, seams) = faces(in: card, open: s >= detailThreshold)
 
-        // Contact shadow under the bottom slab.
-        if s >= 128 {
-            ctx.saveGState()
-            ctx.translateBy(x: card.midX, y: base.y - unit * 1.05)
-            ctx.scaleBy(x: 1, y: 0.30)
-            ctx.setShadow(offset: .zero, blur: s * 0.06,
-                          color: NSColor.black.withAlphaComponent(scheme.contactOpacity + 0.05).cgColor)
-            ctx.setFillColor(NSColor.black.withAlphaComponent(scheme.contactOpacity).cgColor)
-            let r = card.width * 0.33
-            ctx.fillEllipse(in: CGRect(x: -r, y: -r, width: r * 2, height: r * 2))
-            ctx.restoreGState()
+        ctx.setStrokeColor(scheme.seam.cgColor)
+        ctx.setLineWidth(card.width * seamWidth)
+        ctx.setLineCap(.round)
+        for (a, b) in seams {
+            ctx.beginPath()
+            ctx.move(to: a)
+            ctx.addLine(to: b)
+            ctx.strokePath()
         }
 
-        for (index, color) in colors.enumerated() {
-            let origin = CGPoint(x: base.x, y: base.y + CGFloat(index) * unit * slabLift)
-            for face in slabFaces(origin: origin, unit: unit,
-                                  width: slabSpan, depth: slabSpan, height: slabHeight) {
-                ctx.beginPath()
-                ctx.move(to: face.points[0])
-                for point in face.points.dropFirst() { ctx.addLine(to: point) }
-                ctx.closePath()
-                ctx.setFillColor(lighten(color, face.shade).cgColor)
-                ctx.fillPath()
-            }
+        for face in faces {
+            ctx.beginPath()
+            ctx.move(to: face.points[0])
+            for point in face.points.dropFirst() { ctx.addLine(to: point) }
+            ctx.closePath()
+            ctx.setFillColor(color(for: face.role, scheme: scheme).cgColor)
+            ctx.fillPath()
         }
 
         ctx.restoreGState()
+
+        // Hairline keeps a white card from vanishing on a white page. Drawn last
+        // so the clip does not eat half its width.
+        if scheme.needsHairline, s >= 128 {
+            ctx.addPath(squircle)
+            ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.08).cgColor)
+            ctx.setLineWidth(max(1, s * 0.004))
+            ctx.strokePath()
+        }
     }
 
     /// Positive lightens toward white, negative multiplies toward black.
@@ -247,14 +283,14 @@ enum IconRender {
 
     // MARK: - Vector
 
-    /// Vector master, generated from the same geometry as `draw`. SVG's y axis
-    /// runs downward, so every point is mirrored on the way out — the shapes
-    /// themselves are not restated.
+    /// Vector master, generated from the same `faces` call as the raster. SVG's
+    /// y axis runs downward, so every point is mirrored on the way out — the
+    /// geometry itself is not restated.
     static func svg(scheme: Scheme = .dark) -> String {
         let s: CGFloat = 1024
         let card = cardRect(s)
         let radius = cardRadius(card)
-        let (unit, base, colors) = stack(in: card, scheme: scheme)
+        let (faces, seams) = faces(in: card, open: true)
 
         func hex(_ color: NSColor) -> String {
             guard let rgb = color.usingColorSpace(.sRGB) else { return "#000000" }
@@ -263,20 +299,22 @@ enum IconRender {
                           Int((rgb.greenComponent * 255).rounded()),
                           Int((rgb.blueComponent * 255).rounded()))
         }
-
-        var polygons: [String] = []
-        for (index, color) in colors.enumerated() {
-            let origin = CGPoint(x: base.x, y: base.y + CGFloat(index) * unit * slabLift)
-            for face in slabFaces(origin: origin, unit: unit,
-                                  width: slabSpan, depth: slabSpan, height: slabHeight) {
-                let points = face.points
-                    .map { String(format: "%.2f,%.2f", $0.x, s - $0.y) }
-                    .joined(separator: " ")
-                polygons.append("  <polygon points=\"\(points)\" fill=\"\(hex(lighten(color, face.shade)))\"/>")
-            }
+        func alpha(_ color: NSColor) -> String {
+            guard let rgb = color.usingColorSpace(.sRGB) else { return "1" }
+            return String(format: "%.2f", rgb.alphaComponent)
         }
 
-        let shadowY = s - (base.y - unit * 1.05)
+        let seamMarkup = seams.map { a, b in
+            String(format: "    <line x1=\"%.2f\" y1=\"%.2f\" x2=\"%.2f\" y2=\"%.2f\"/>",
+                   a.x, s - a.y, b.x, s - b.y)
+        }.joined(separator: "\n")
+
+        let faceMarkup = faces.map { face in
+            let points = face.points
+                .map { String(format: "%.2f,%.2f", $0.x, s - $0.y) }
+                .joined(separator: " ")
+            return "    <polygon points=\"\(points)\" fill=\"\(hex(color(for: face.role, scheme: scheme)))\"/>"
+        }.joined(separator: "\n")
 
         return """
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
@@ -286,21 +324,15 @@ enum IconRender {
               <stop offset="0" stop-color="\(hex(lighten(scheme.card, scheme.cardLift)))"/>
               <stop offset="1" stop-color="\(hex(scheme.card))"/>
             </linearGradient>
-            <radialGradient id="contact">
-              <stop offset="0" stop-color="#000000" stop-opacity="\(fmt(scheme.contactOpacity))"/>
-              <stop offset="1" stop-color="#000000" stop-opacity="0"/>
-            </radialGradient>
-            <clipPath id="cardClip">
-              <rect x="\(fmt(card.minX))" y="\(fmt(card.minY))" width="\(fmt(card.width))" \
-        height="\(fmt(card.height))" rx="\(fmt(radius))" ry="\(fmt(radius))"/>
-            </clipPath>
           </defs>
           <rect x="\(fmt(card.minX))" y="\(fmt(card.minY))" width="\(fmt(card.width))" \
         height="\(fmt(card.height))" rx="\(fmt(radius))" ry="\(fmt(radius))" fill="url(#card)"/>
-          <g clip-path="url(#cardClip)">
-            <ellipse cx="\(fmt(card.midX))" cy="\(fmt(shadowY))" rx="\(fmt(card.width * 0.33))" \
-        ry="\(fmt(card.width * 0.33 * 0.30))" fill="url(#contact)"/>
-        \(polygons.joined(separator: "\n"))
+          <g stroke="\(hex(scheme.seam))" stroke-opacity="\(alpha(scheme.seam))" \
+        stroke-width="\(fmt(card.width * seamWidth))" stroke-linecap="round">
+        \(seamMarkup)
+          </g>
+          <g>
+        \(faceMarkup)
           </g>
         </svg>
         """
