@@ -81,21 +81,34 @@ Frame 1440x900  "Desktop"
   Text  @left  "panel becomes bottom drawer under 768"  [amber]
 ```
 
-Measured on that exact scene:
+On that exact scene:
 
 | Mode | Cost | Use |
 |---|---|---|
-| **Tree only** | **~117 tokens** | Default. Structural changes, layout specs. |
-| Tree + image | ~2,100 tokens | When proportion or feel matters. |
-| Image only | ~1,981 tokens | Annotated screenshots, where the tree is meaningless. |
+| **Tree only** | **617 characters** | Default. Structural changes, layout specs. |
+| Image only | **2,153 tokens** | When proportion or feel matters. |
+| Tree + image | both | Annotated screenshots, where the tree alone is thin. |
 
-Roughly **17× cheaper**, and structurally *more* precise — six identical rows
-collapse to `×6` with an exact count, rather than a model counting rectangles in
-a JPEG and getting five.
+The image number is exact arithmetic: Anthropic resizes anything over 1568px on
+the long edge and charges `(width × height) / 750`, so 3008×1976 becomes
+1568×1030 becomes 2,153 tokens.
 
-Caveat worth keeping in the copy: image cost uses Anthropic's
-`(width × height) / 750`; text cost is a character-based estimate. The point is
-the order of magnitude, not the third digit.
+The tree number is given in characters on purpose. An earlier draft of this
+write-up claimed "~117 tokens, 17× cheaper" — both figures came from a
+character-based estimate, and character estimates are unreliable for Claude,
+most unreliable on exactly this kind of symbol-dense text. `Scripts/measure-payload.sh`
+counts it properly through Anthropic's `count_tokens` endpoint.
+
+The claim that survives without measuring anything is the shape: a screenshot of
+this sketch costs over two thousand tokens; the tree is 617 characters of plain
+text. Roughly an order of magnitude, robust to any plausible tokenization — and
+structurally *more* precise, since six identical rows collapse to `×6` with an
+exact count and step rather than a model counting rectangles in a JPEG and
+getting five.
+
+If you quote a number in the write-up, run the script and quote the measured one
+with the model and date beside it. A precise figure that nobody measured is
+worse than an honest range.
 
 ---
 

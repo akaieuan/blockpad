@@ -113,21 +113,41 @@ value the receiving agent can paste into CSS, where `[slate]` would have been a
 lookup it could not perform. Repeats collapse to a count plus the step between
 them, so `×6` stays cheap without discarding where the other five are.
 
-Measured on that exact scene:
+On that exact scene:
 
 | Mode | Cost | Use |
 |---|---|---|
-| **Tree only** | **~166 tokens** | Default. Structural changes, layout specs. |
-| Tree + image | ~2,150 tokens | When proportion or feel matters. |
-| Image only | ~1,981 tokens | Annotated screenshots, where the tree is meaningless. |
+| **Tree only** | **617 characters** | Default. Structural changes, layout specs. |
+| Image only | **2,153 tokens** | When proportion or feel matters. |
+| Tree + image | both | Annotated screenshots, where the tree alone is thin. |
 
-Roughly **12× cheaper**, and structurally *more* precise — six identical rows
-collapse to `×6` with an exact count, rather than a model counting rectangles in
-a JPEG and getting five.
+The image figure is arithmetic and exact: Anthropic resizes anything over
+1568px on the long edge, then charges `(width × height) / 750`. The sample
+renders at 3008×1976, which becomes 1568×1030, which is 2,153 tokens.
 
-<sub>Image cost uses Anthropic's `(width × height) / 750`. Text cost is a
-character-based estimate; exact tokenization varies. The point is the order of
-magnitude, not the third digit.</sub>
+The tree figure is deliberately given in characters rather than tokens, because
+**tokens are the thing you cannot estimate honestly.** Character-count
+heuristics and OpenAI tokenizers both misjudge Claude, and they misjudge it
+worst on exactly this kind of text — `@960,0`, `#55677A`, `×6` tokenize far
+less kindly than prose. 617 characters is somewhere in the low hundreds of
+tokens; pinning it down takes a measurement, not a ratio.
+
+So run the measurement rather than trusting a number in a README:
+
+```bash
+ANTHROPIC_API_KEY=... ./Scripts/measure-payload.sh
+```
+
+It counts the tree through Anthropic's `count_tokens` endpoint, computes the
+image side from the dimensions, and prints the table. The image half runs
+without a key.
+
+What survives without any measurement is the shape of the gap: a screenshot of
+this sketch costs over two thousand tokens, and the tree is 617 characters of
+plain text. That is roughly an order of magnitude, and it holds across any
+plausible tokenization. It is also structurally *more* precise — six identical
+rows collapse to `×6` with an exact count and an exact step, rather than a
+model counting rectangles in a JPEG and getting five.
 
 Being honest about the other half: **an image is not automatically the expensive
 choice.** One 2,000-token picture that lands the layout first time beats four
