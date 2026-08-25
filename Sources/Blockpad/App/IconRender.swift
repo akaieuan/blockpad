@@ -69,16 +69,19 @@ enum IconRender {
     // MARK: - Proportions
 
     /// Cube radius, as a fraction of the card width.
-    static let cubeRadius: CGFloat = 0.29
+    static let cubeRadius: CGFloat = 0.30
     /// How far each face slides along its normal, as a fraction of the radius.
-    static let faceGap: CGFloat = 0.22
+    static let faceGap: CGFloat = 0.183
     /// Seam weight, as a fraction of the card width.
-    static let seamWidth: CGFloat = 0.020
-    /// How far along the centre-to-vertex span each seam runs. Under 1, so the
-    /// seams stop inside the notches between faces and read as connective
-    /// tissue. Running them to the vertices — or past — makes them protrude
-    /// into the outer corners and the cube stops holding together.
-    static let seamReach: CGFloat = 0.55
+    static let seamWidth: CGFloat = 0.018
+    /// Seam length, as a multiple of the gap each face travels.
+    ///
+    /// The seams run along the direction each face *moved*, not along the cube's
+    /// old interior edges. That distinction is the whole effect: a line pointing
+    /// at the face it holds reads as a tether, while a line along an old edge
+    /// points into the notch between two faces and reads as an escaped stroke.
+    /// The two directions are 60 degrees apart.
+    static let seamLength: CGFloat = 2
     /// Below this pixel size the seams would be sub-pixel and the gaps would
     /// read as damage, so the cube is drawn closed and solid instead. Simplify
     /// small rather than render the same thing badly.
@@ -161,11 +164,10 @@ enum IconRender {
             pts.map { CGPoint(x: $0.x + d.x, y: $0.y + d.y) }
         }
 
-        // The cube's three interior edges. Drawn under the faces, so only the
-        // part bridging a gap is ever visible.
-        let seams = open ? [ur, ul, bot].map { end in
-            (o, CGPoint(x: o.x + (end.x - o.x) * seamReach,
-                        y: o.y + (end.y - o.y) * seamReach))
+        // One tether per face, pointing the way that face travelled. Drawn under
+        // the faces, so only the length bridging a gap is ever visible.
+        let seams = open ? [dTop, dRight, dLeft].map { d in
+            (o, CGPoint(x: o.x + d.x * seamLength, y: o.y + d.y * seamLength))
         } : []
 
         return ([
