@@ -19,6 +19,28 @@ struct PropertiesPanel: View {
     private var showsShapeProperties: Bool { hasSelection || store.tool.isDrawing }
     private var style: Style { store.effectiveStyle }
 
+    /// A plane applies to closed shapes and frames, not to connectors or ink.
+    private var showsPlane: Bool {
+        if hasSelection {
+            return store.selectedBlocks.contains { !$0.kind.isLinear && $0.kind != .pen }
+        }
+        guard let kind = store.tool.kind else { return false }
+        return !kind.isLinear && kind != .pen
+    }
+
+    private var plane: Transform2D {
+        store.selectedBlocks.first(where: { !$0.kind.isLinear })?.plane ?? .identity
+    }
+
+    private func applyPlane(_ change: @escaping (inout Transform2D) -> Void, name: String) {
+        canvas()?.applyStyle({ block in
+            guard !block.kind.isLinear, block.kind != .pen else { return }
+            var t = block.plane
+            change(&t)
+            block.transform = t.isIdentity ? nil : t
+        }, name: name)
+    }
+
     /// Angle and bow only mean anything for a connector.
     private var linearSelection: [Block] {
         store.selectedBlocks.filter { $0.kind.isLinear }
@@ -260,6 +282,44 @@ struct PropertiesPanel: View {
             })
         }
 
+        if showsPlane, hasSelection {
+            rows.append(RowSpec(id: "plane", glyph: "cube", label: "Plane") {
+                AnyView(Segments(count: Transform2D.Preset.allCases.count,
+                                 selected: Transform2D.Preset.allCases
+                                    .firstIndex(of: plane.preset ?? .flat) ?? 0,
+                                 names: Transform2D.Preset.allCases.map(\.label)) { index in
+                    PlaneGlyph(preset: Transform2D.Preset.allCases[index])
+                } action: { index in
+                    let preset = Transform2D.Preset.allCases[index]
+                    applyPlane({ $0 = preset.transform }, name: "Plane")
+                })
+            })
+
+            if plane.preset == nil || plane.preset == .flat {
+                rows.append(RowSpec(id: "rotate", glyph: "rotate.right", label: "Rotate") {
+                    AnyView(NumberControl(value: plane.rotation < 0 ? plane.rotation + 360 : plane.rotation,
+                                          range: 0...360,
+                                          step: 1,
+                                          wraps: true,
+                                          unit: "°",
+                                          presets: [0, 15, 30, 45, 90, 180, 270]) { degrees in
+                        applyPlane({ $0.rotation = degrees > 180 ? degrees - 360 : degrees },
+                                   name: "Rotate")
+                    })
+                })
+
+                rows.append(RowSpec(id: "skew", glyph: "skew", label: "Skew") {
+                    AnyView(NumberControl(value: plane.skewX,
+                                          range: -60...60,
+                                          step: 1,
+                                          unit: "°",
+                                          presets: [-30, -15, 0, 15, 30]) { degrees in
+                        applyPlane({ $0.skewX = degrees }, name: "Skew")
+                    })
+                })
+            }
+        }
+
         rows.append(RowSpec(id: "opacity", glyph: "circle.lefthalf.filled", label: "Opacity",
                             value: "\(Int(style.opacity * 100))%") {
             AnyView(Slider(value: Binding(
@@ -428,5 +488,27 @@ private struct Swatches: View {
                 }
             }
         }
+    }
+}
+
+
+/// Each isometric face drawn as itself, so the segmented control shows the
+/// plane instead of naming it.
+private struct PlaneGlyph: View {
+    let preset: Transform2D.Preset
+
+    var body: some View {
+        GeometryReader { geo in
+            let box = CGRect(x: geo.size.width * 0.22, y: geo.size.height * 0.22,
+                             width: geo.size.width * 0.56, height: geo.size.height * 0.56)
+            Path { path in
+                let corners = preset.transform.corners(of: box)
+                path.move(to: corners[0])
+                for point in corners.dropFirst() { path.addLine(to: point) }
+                path.closeSubpath()
+            }
+            .fill(Color.primary.opacity(Token.Ink.secondary))
+        }
+        .frame(width: Token.Size.control, height: Token.Size.control)
     }
 }

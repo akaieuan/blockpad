@@ -210,6 +210,7 @@ you used last, with the rest on a flyout.
 | drag with guides on | edges and centres snap to nearby blocks |
 | `Shift`-drag a connector | snaps its heading to 15° |
 | drag a connector's mid-handle | bows it off its chord |
+| drag the round handle above a shape | rotates it · `Shift` snaps to 15° |
 | viewfinder button | fits the drawing into the area the chrome is not covering |
 
 **Alignment guides** are worth calling out. Grid snapping gives tidy coordinates
@@ -227,6 +228,24 @@ the tangent. The inspector carries the same two as numbers you can scrub. Both
 reach the payload: a connector serializes as its length, its heading in degrees,
 and its bow, rather than as a bounding box that says nothing about which way it
 runs.
+
+### Planes
+
+A shape can be tilted onto a plane — the three isometric faces as presets, or
+free rotation and skew. A rotation handle sits above the block; `Shift` snaps it
+to 15°. Text, fills, corner radii and hit testing all follow the tilt, and the
+selection outline traces the tilted shape rather than a box around it.
+
+The tilt is **affine**, not a free quadrilateral, and that is a payload decision
+rather than an implementation shortcut. An affine transform maps one-to-one onto
+a CSS `transform`, so what reaches the agent is something it can paste; an
+arbitrary quad is a projective transform it could only approximate. It also
+means a rect stays a rect, so alignment, snapping and run detection keep working
+— none of which have an answer for the left edge of an arbitrary quad.
+
+In the tree a tilt names itself: `Box 200x200 @40,60 iso-top`. An agent that
+ignores it still has a correct flat layout, which is the right failure mode —
+the plane is presentation, the rect is structure.
 
 ### Grouping
 

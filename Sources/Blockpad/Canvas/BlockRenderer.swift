@@ -90,6 +90,13 @@ enum BlockRenderer {
             ctx.beginTransparencyLayer(auxiliaryInfo: nil)
         }
 
+        // The tilt wraps the whole shape, so fills, strokes, corner radii,
+        // hachure and text all follow it without any per-shape work.
+        if block.isTilted, !block.kind.isLinear, block.kind != .pen {
+            let r = block.rect.standardized
+            ctx.concatenate(block.plane.matrix(about: CGPoint(x: r.midX, y: r.midY)))
+        }
+
         switch block.kind {
         case .frame:  drawFrame(block, in: ctx, options: options)
         case .text:   drawText(block, in: ctx, options: options)

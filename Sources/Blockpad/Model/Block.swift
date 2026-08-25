@@ -117,6 +117,9 @@ struct Block: Identifiable, Codable, Equatable {
     /// How far a connector bows out of its chord, as a signed fraction of the
     /// chord's length. Zero is a straight line; the sign picks a side.
     var curve: Double = 0
+    /// Tilt onto a plane. nil is flat, which is what every block drawn before
+    /// planes existed decodes to.
+    var transform: Transform2D?
     /// Blocks sharing an id move and select as one. Separate from `parentID`,
     /// which is geometric nesting the export infers — grouping is a decision
     /// the person made, and it should survive them dragging things apart.
@@ -131,7 +134,7 @@ struct Block: Identifiable, Codable, Equatable {
          text: String = "", stroke: String = Palette.defaultStroke, fill: String? = nil,
          fillStyle: FillStyle = .solid, strokeWidth: Double = 2,
          cornerRadius: Double = 10, opacity: Double = 1, fontSize: Double? = nil,
-         curve: Double = 0, groupID: UUID? = nil,
+         curve: Double = 0, transform: Transform2D? = nil, groupID: UUID? = nil,
          seed: UInt64 = UInt64.random(in: 1...UInt64.max),
          points: [CGPoint] = [], z: Int = 0) {
         self.id = id
@@ -147,6 +150,7 @@ struct Block: Identifiable, Codable, Equatable {
         self.opacity = opacity
         self.fontSize = fontSize
         self.curve = curve
+        self.transform = transform
         self.groupID = groupID
         self.seed = seed
         self.points = points
@@ -158,7 +162,7 @@ struct Block: Identifiable, Codable, Equatable {
     /// Includes the retired palette keys so old scenes can still be read.
     private enum CodingKeys: String, CodingKey {
         case id, kind, parentID, rect, text, stroke, fill, fillStyle
-        case strokeWidth, cornerRadius, opacity, fontSize, curve, groupID, seed, points, z
+        case strokeWidth, cornerRadius, opacity, fontSize, curve, transform, groupID, seed, points, z
         case colorIndex, fillIndex, strokeIndex, corner
     }
 
@@ -209,6 +213,7 @@ struct Block: Identifiable, Codable, Equatable {
         }
         fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize)
         curve = try c.decodeIfPresent(Double.self, forKey: .curve) ?? 0
+        transform = try c.decodeIfPresent(Transform2D.self, forKey: .transform)
         groupID = try c.decodeIfPresent(UUID.self, forKey: .groupID)
         seed = try c.decodeIfPresent(UInt64.self, forKey: .seed) ?? UInt64.random(in: 1...UInt64.max)
         points = try c.decodeIfPresent([CGPoint].self, forKey: .points) ?? []
@@ -230,6 +235,9 @@ struct Block: Identifiable, Codable, Equatable {
         try c.encode(opacity, forKey: .opacity)
         try c.encodeIfPresent(fontSize, forKey: .fontSize)
         try c.encode(curve, forKey: .curve)
+        // Only written once it is actually a tilt, so a flat scene's file does
+        // not grow a field of zeroes on every block.
+        try c.encodeIfPresent(transform?.isIdentity == true ? nil : transform, forKey: .transform)
         try c.encodeIfPresent(groupID, forKey: .groupID)
         try c.encode(seed, forKey: .seed)
         try c.encode(points, forKey: .points)
@@ -262,12 +270,23 @@ struct Block: Identifiable, Codable, Equatable {
         return CGPoint(x: mid.x + nx * offset, y: mid.y + ny * offset)
     }
 
+    /// The tilt actually in force. Reading this rather than `transform`
+    /// directly means nothing downstream has to unwrap.
+    var plane: Transform2D { transform ?? .identity }
+
+    var isTilted: Bool { !(transform ?? .identity).isIdentity }
+
     /// The rect to hit-test and frame against.
     var bounds: CGRect {
         if kind == .pen, !points.isEmpty {
             let xs = points.map(\.x), ys = points.map(\.y)
             return CGRect(x: xs.min()!, y: ys.min()!,
                           width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
+        }
+        // A tilted block occupies more than its rect, and selection chrome and
+        // zoom-to-fit both need the space it really covers.
+        if isTilted, !kind.isLinear, kind != .pen {
+            return plane.bounds(of: rect.standardized)
         }
         if kind.isLinear {
             let (a, b) = endpoints

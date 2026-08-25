@@ -113,9 +113,19 @@ final class CanvasView: NSView {
         ctx.setLineWidth(1.5)
 
         for block in selected {
-            let r = toView(block.bounds).insetBy(dx: -4, dy: -4)
-            let rounded = CGPath(roundedRect: r, cornerWidth: 4, cornerHeight: 4, transform: nil)
-            ctx.addPath(rounded)
+            if block.isTilted, !block.kind.isLinear, block.kind != .pen {
+                // Trace the plane itself. A rectangle drawn round a tilted block
+                // says nothing about where its edges actually are.
+                let corners = block.plane.corners(of: block.rect.standardized).map(toView)
+                let path = CGMutablePath()
+                path.move(to: corners[0])
+                for point in corners.dropFirst() { path.addLine(to: point) }
+                path.closeSubpath()
+                ctx.addPath(path)
+            } else {
+                let r = toView(block.bounds).insetBy(dx: -4, dy: -4)
+                ctx.addPath(CGPath(roundedRect: r, cornerWidth: 4, cornerHeight: 4, transform: nil))
+            }
             ctx.strokePath()
         }
 
@@ -127,7 +137,7 @@ final class CanvasView: NSView {
                 ctx.setLineWidth(1.5)
                 // The bow handle is round, so it does not read as a corner you
                 // could drag to resize.
-                let path = handle == .curve
+                let path = (handle == .curve || handle == .rotate)
                     ? CGPath(ellipseIn: h.insetBy(dx: -0.5, dy: -0.5), transform: nil)
                     : CGPath(roundedRect: h, cornerWidth: 2, cornerHeight: 2, transform: nil)
                 ctx.addPath(path); ctx.fillPath()
@@ -192,7 +202,11 @@ final class CanvasView: NSView {
         // an edge handle would imply a reflow that a single line does not do.
         if block.kind == .text { return [.topLeft, .topRight, .bottomLeft, .bottomRight] }
         if block.kind == .pen { return [] }
-        return Handle.allCases
+        // Corners resize the untilted rect; the rotate handle spins it. Frames
+        // stay square — a tilted reference frame is a contradiction.
+        return block.kind == .frame
+            ? Handle.allCases.filter { $0 != .curve && $0 != .rotate }
+            : Handle.allCases.filter { $0 != .curve }
     }
 
     private func handleRect(_ handle: Handle, for block: Block) -> CGRect {
@@ -204,6 +218,18 @@ final class CanvasView: NSView {
             case .curve:       p = toView(block.curveApex)
             default:           p = toView(end)
             }
+        } else if handle == .rotate {
+            // Rides above the middle of the block's own top edge, so it stays
+            // where the shape is rather than where its bounding box is.
+            let r = block.rect.standardized
+            let corners = block.plane.corners(of: r)
+            let mid = CGPoint(x: (corners[0].x + corners[1].x) / 2,
+                              y: (corners[0].y + corners[1].y) / 2)
+            let inward = CGPoint(x: r.midX - mid.x, y: r.midY - mid.y)
+            let span = max(1, hypot(inward.x, inward.y))
+            let lift = 18 / store.zoom
+            p = toView(CGPoint(x: mid.x - inward.x / span * lift,
+                               y: mid.y - inward.y / span * lift))
         } else {
             p = handle.point(in: toView(block.bounds).insetBy(dx: -4, dy: -4))
         }
@@ -247,7 +273,15 @@ final class CanvasView: NSView {
                     }
                 }
             default:
-                if block.bounds.insetBy(dx: -4, dy: -4).contains(docPoint) { return block }
+                // Tilted blocks are tested in their own space, so a click lands
+                // correctly however far the plane leans.
+                if block.isTilted {
+                    if block.plane.contains(docPoint, in: block.rect.standardized, slop: 4) {
+                        return block
+                    }
+                } else if block.bounds.insetBy(dx: -4, dy: -4).contains(docPoint) {
+                    return block
+                }
             }
         }
         return nil
@@ -434,6 +468,17 @@ final class CanvasView: NSView {
                         : CGRect(x: origin.x, y: origin.y,
                                  width: moving.x - origin.x, height: moving.y - origin.y)
                 }
+            } else if handle == .rotate {
+                let r = original.standardized
+                let centre = CGPoint(x: r.midX, y: r.midY)
+                // Straight up from the centre is zero, so the handle sits where
+                // the cursor does rather than 90° away from it.
+                var degrees = Double(atan2(docPoint.y - centre.y, docPoint.x - centre.x)
+                                     * 180 / .pi) + 90
+                if constrain { degrees = (degrees / 15).rounded() * 15 }
+                var plane = block.plane
+                plane.rotation = degrees.truncatingRemainder(dividingBy: 360)
+                blocks[index].transform = plane.isIdentity ? nil : plane
             } else if block.kind == .text {
                 // Dragging a corner scales the type. Stretching the box would do
                 // nothing visible, which is why text had no handles at all.
@@ -1014,6 +1059,8 @@ enum Handle: CaseIterable {
     case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
     /// Connectors only. Sits on the bow and sets how far it leaves the chord.
     case curve
+    /// Closed shapes only. Sits above the box and spins it.
+    case rotate
 
     func point(in r: CGRect) -> CGPoint {
         switch self {
@@ -1026,6 +1073,7 @@ enum Handle: CaseIterable {
         case .bottomLeft:  return CGPoint(x: r.minX, y: r.maxY)
         case .left:        return CGPoint(x: r.minX, y: r.midY)
         case .curve:       return CGPoint(x: r.midX, y: r.midY)
+        case .rotate:      return CGPoint(x: r.midX, y: r.minY)
         }
     }
 
@@ -1036,7 +1084,7 @@ enum Handle: CaseIterable {
         case .topRight:    return CGPoint(x: r.minX, y: r.maxY)
         case .bottomLeft:  return CGPoint(x: r.maxX, y: r.minY)
         case .bottomRight: return CGPoint(x: r.minX, y: r.minY)
-        case .top, .bottom, .left, .right, .curve: return CGPoint(x: r.minX, y: r.minY)
+        case .top, .bottom, .left, .right, .curve, .rotate: return CGPoint(x: r.minX, y: r.minY)
         }
     }
 
@@ -1051,7 +1099,7 @@ enum Handle: CaseIterable {
         case .bottom:      maxY = p.y
         case .bottomLeft:  minX = p.x; maxY = p.y
         case .left:        minX = p.x
-        case .curve:       break
+        case .curve, .rotate: break
         }
         return CGRect(x: min(minX, maxX), y: min(minY, maxY),
                       width: abs(maxX - minX), height: abs(maxY - minY))

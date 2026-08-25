@@ -269,6 +269,12 @@ enum SketchExport {
         if block.kind.isLinear, block.curve != 0 {
             parts.append("bow \(Int((block.curve * 100).rounded()))%")
         }
+        // The tilt names itself. An agent that ignores it still has a correct
+        // flat layout, which is the right failure mode — the plane is
+        // presentation, the rect is structure.
+        if let plane = block.transform?.token {
+            parts.append(plane)
+        }
 
         lines.append(indent + parts.joined(separator: "  "))
 
