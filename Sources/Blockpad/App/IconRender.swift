@@ -74,8 +74,11 @@ enum IconRender {
     static let faceGap: CGFloat = 0.22
     /// Seam weight, as a fraction of the card width.
     static let seamWidth: CGFloat = 0.020
-    /// How far past the cube's centre-to-vertex span each seam runs.
-    static let seamOverrun: CGFloat = 0.35
+    /// How far along the centre-to-vertex span each seam runs. Under 1, so the
+    /// seams stop inside the notches between faces and read as connective
+    /// tissue. Running them to the vertices — or past — makes them protrude
+    /// into the outer corners and the cube stops holding together.
+    static let seamReach: CGFloat = 0.55
     /// Below this pixel size the seams would be sub-pixel and the gaps would
     /// read as damage, so the cube is drawn closed and solid instead. Simplify
     /// small rather than render the same thing badly.
@@ -160,9 +163,9 @@ enum IconRender {
 
         // The cube's three interior edges. Drawn under the faces, so only the
         // part bridging a gap is ever visible.
-        let reach = 1 + seamOverrun
         let seams = open ? [ur, ul, bot].map { end in
-            (o, CGPoint(x: o.x + (end.x - o.x) * reach, y: o.y + (end.y - o.y) * reach))
+            (o, CGPoint(x: o.x + (end.x - o.x) * seamReach,
+                        y: o.y + (end.y - o.y) * seamReach))
         } : []
 
         return ([
