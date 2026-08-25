@@ -51,6 +51,9 @@ enum Palette {
         return NSColor(srgbRed: c.r, green: c.g, blue: c.b, alpha: c.a)
     }
 
+    /// Rule warnings. Amber rather than red: a sketch that breaks a guideline
+    /// is unfinished, not broken.
+    static let warning = NSColor(srgbRed: 0.85, green: 0.55, blue: 0.13, alpha: 0.95)
     static let selection = NSColor(srgbRed: 0.353, green: 0.333, blue: 0.855, alpha: 1)
     /// Alignment guides read as a different system from selection, so they get
     /// their own hue rather than a lighter tint of it.
@@ -65,6 +68,12 @@ struct CanvasTheme: Identifiable, Hashable, Codable {
     let isDark: Bool
 
     var color: NSColor { background.nsColor }
+
+    /// The paper as hex, for contrast checks: a text block's label sits on this
+    /// rather than on a fill of its own.
+    var hex: String {
+        HexColor.string(r: Double(background.r), g: Double(background.g), b: Double(background.b))
+    }
 
     /// Grid and frame chrome have to invert on a dark ground or they vanish.
     var gridColor: NSColor {

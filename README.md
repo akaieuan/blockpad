@@ -254,6 +254,36 @@ and it moves as one. Grouping is a decision you made, so it is stored
 separately from the geometric nesting the tree infers, and it survives you
 dragging the pieces apart.
 
+### Templates
+
+Four templates set the defaults for what you draw next — Modern Minimal,
+Accessible, Storyboard, User Story. They never restyle what is already on the
+canvas; that is not a default, it is damage.
+
+**Accessible is the one that does more than look different.** It carries rules
+rather than preferences — WCAG AA contrast at 4.5:1, 44pt minimum targets, 16pt
+minimum text — and checks the drawing against them as you work. Blocks that
+break one get a small amber dot, not a red outline: a sketch is provisional by
+definition, and a wall of errors over a rough layout is hostile. The inspector
+shows a live count and selects the offenders.
+
+It is also the only template that names itself in the payload:
+
+```
+template accessible  # WCAG AA contrast, 44pt targets, 16pt text
+Box 200x48  @0,70  "Submit"  stroke #14181F  fill #FFFFFF  r8
+```
+
+That line costs almost nothing and changes how everything under it should be
+read. An agent told `accessible` should not offer a 3:1 grey. The templates that
+only set defaults stay silent, because their effect is already in the hex values
+the tree carries anyway.
+
+The contrast check uses real WCAG relative luminance, with the sRGB gamma
+expansion — not a brightness average, which is wrong across the whole midrange,
+exactly where people pick colours. It is tested against the published boundary:
+`#767676` on white clears 4.5:1 at 4.54, `#777777` does not.
+
 ### Styling
 
 Colour is arbitrary hex, not a fixed palette. Four presets stay inline in each

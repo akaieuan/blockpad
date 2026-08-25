@@ -36,6 +36,7 @@ struct SketchDocument: Codable {
     var sketchy: Bool?
     var recentColors: [String]?
     var snapping: Bool?
+    var template: String?
 }
 
 /// Canvas contents persist across hide/show and across app restart (§2).
@@ -57,6 +58,51 @@ final class SketchStore: ObservableObject {
     @Published var inspectorOpen: Bool = true
     /// Alignment guides while dragging.
     @Published var snapping: Bool = true { didSet { scheduleSave() } }
+    /// The active style template, by id. Sets defaults for new blocks and, for
+    /// the one template with rules, checks what is already drawn.
+    @Published var templateID: String? { didSet { scheduleSave() } }
+
+    var template: StyleTemplate? { StyleTemplate.named(templateID) }
+
+    /// What the active template flags, if it checks anything. Recomputed on
+    /// read rather than cached — the scenes are small and a stale warning is
+    /// worse than a recomputed one.
+    var violations: [Violation] {
+        guard let template, template.isChecked else { return [] }
+        return template.violations(for: blocks.compactMap(ruleSubject))
+    }
+
+    /// Maps a block onto what the rules can judge. A block's stroke is also its
+    /// label colour, and a label sits on the block's fill when it has one and on
+    /// the paper when it does not.
+    private func ruleSubject(_ block: Block) -> RuleSubject? {
+        guard block.kind.takesText else { return nil }
+        let bounds = block.bounds
+        return RuleSubject(id: block.id,
+                           foreground: block.stroke,
+                           background: block.fill ?? theme.hex,
+                           size: bounds.size,
+                           fontSize: Double(BlockRenderer.fontSize(for: block)),
+                           carriesLabel: !block.text.isEmpty,
+                           couldBeControl: block.kind.takesFill)
+    }
+
+    /// Adopts a template's defaults for blocks drawn from now on. Never
+    /// restyles what is already there — that is not a default, it is damage.
+    func applyTemplate(_ template: StyleTemplate?) {
+        templateID = template?.id
+        guard let template else { return }
+        let d = template.defaults
+        style.stroke = d.stroke
+        style.fill = d.fill
+        style.strokeWidth = d.strokeWidth
+        style.cornerRadius = d.cornerRadius
+        style.fontSize = d.fontSize
+        if let paper = d.paper, let match = CanvasTheme.all.first(where: { $0.name == paper }) {
+            theme = match
+        }
+        flash("\(template.name)")
+    }
 
     var renderOptions: RenderOptions { RenderOptions(theme: theme, sketchy: sketchy) }
 
@@ -142,7 +188,8 @@ final class SketchStore: ObservableObject {
     func save() {
         let doc = SketchDocument(blocks: blocks, frameSize: frameSize,
                                  pan: pan, zoom: zoom, theme: theme.name, sketchy: sketchy,
-                                 recentColors: recentColors, snapping: snapping)
+                                 recentColors: recentColors, snapping: snapping,
+                                 template: templateID)
         do {
             try JSONEncoder().encode(doc).write(to: Self.storeURL, options: .atomic)
         } catch {
@@ -161,5 +208,6 @@ final class SketchStore: ObservableObject {
         sketchy = doc.sketchy ?? false
         snapping = doc.snapping ?? true
         recentColors = doc.recentColors ?? []
+        templateID = doc.template
     }
 }

@@ -17,7 +17,7 @@ struct SendIsland: View {
     private func measurement(_ option: PayloadMode) -> String {
         guard !store.blocks.isEmpty else { return "empty" }
         let bounds = SketchExport.contentBounds(store.blocks)
-        return option.measurement(tree: SketchExport.tree(store.blocks),
+        return option.measurement(tree: SketchExport.tree(store.blocks, template: store.template),
                                   imageSize: CGSize(width: bounds.width * 2,
                                                     height: bounds.height * 2))
     }

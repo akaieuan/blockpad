@@ -102,10 +102,29 @@ final class CanvasView: NSView {
         }
         ctx.restoreGState()
 
+        drawRuleWarnings(in: ctx)
         drawSelectionChrome(in: ctx)
     }
 
     /// Selection UI is drawn in view space so its weight stays constant at any zoom.
+    /// A block breaking the active template's rules gets a small marker at its
+    /// top-left corner — not a red outline. A sketch is provisional by
+    /// definition, and a wall of errors over someone's rough layout is hostile.
+    private func drawRuleWarnings(in ctx: CGContext) {
+        let flagged = store.violations
+        guard !flagged.isEmpty else { return }
+        let byID = Dictionary(grouping: flagged, by: \.blockID)
+
+        ctx.saveGState()
+        for block in store.blocks where byID[block.id] != nil {
+            let r = toView(block.bounds)
+            let dot = CGRect(x: r.minX - 3, y: r.minY - 3, width: 7, height: 7)
+            ctx.setFillColor(Palette.warning.cgColor)
+            ctx.fillEllipse(in: dot)
+        }
+        ctx.restoreGState()
+    }
+
     private func drawSelectionChrome(in ctx: CGContext) {
         let selected = store.selectedBlocks
         ctx.saveGState()

@@ -1,4 +1,5 @@
 import AppKit
+import BlockpadKit
 
 /// Headless render of a representative scene. A Mac app has no simulator, so
 /// this is how the drawing can be inspected without a screen — and it doubles as
@@ -79,7 +80,8 @@ extension SampleRender {
         }
         try? png.write(to: URL(fileURLWithPath: outputPath))
         print("wrote \(outputPath)  (\(doc.blocks.count) blocks)")
-        print(SketchExport.tree(doc.blocks))
+        // Same template the app would send, or this dump disagrees with Copy.
+        print(SketchExport.tree(doc.blocks, template: StyleTemplate.named(doc.template)))
     }
 }
 

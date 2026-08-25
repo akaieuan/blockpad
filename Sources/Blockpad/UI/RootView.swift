@@ -132,7 +132,9 @@ struct RootView: View {
 
     private func send() {
         let mode = PayloadMode(rawValue: payloadModeRaw) ?? .tree
-        store.flash(SketchExport.copyToPasteboard(store.blocks, mode: mode, options: store.renderOptions))
+        store.flash(SketchExport.copyToPasteboard(store.blocks, mode: mode,
+                                                  options: store.renderOptions,
+                                                  template: store.template))
     }
 }
 

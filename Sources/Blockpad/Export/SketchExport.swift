@@ -124,7 +124,7 @@ enum SketchExport {
     /// Serializes the scene graph to text locally, no inference. Parenthood is
     /// inferred from containment because that is how you actually draw — you put
     /// a box inside a frame, you don't declare a relationship.
-    static func tree(_ blocks: [Block]) -> String {
+    static func tree(_ blocks: [Block], template: StyleTemplate? = nil) -> String {
         let visible = blocks.filter { $0.kind != .redact }
         guard !visible.isEmpty else { return "" }
 
@@ -137,6 +137,14 @@ enum SketchExport {
         let contentOrigin = visible.map(\.bounds).reduce(CGRect.null) { $0.union($1) }.origin
         emitSiblings(roots, in: visible, signatures: signatures, depth: 0,
                      contentOrigin: contentOrigin, into: &lines)
+
+        // A template with rules leads the tree, because it changes how
+        // everything below it should be read: an agent told `accessible` should
+        // not offer a 3:1 grey. Templates that only set defaults say nothing —
+        // their effect is already in the hex values.
+        if let template, template.isChecked {
+            lines.insert("template \(template.id)  # \(template.summary)", at: 0)
+        }
         return lines.joined(separator: "\n")
     }
 
@@ -312,7 +320,9 @@ enum SketchExport {
     // MARK: - Pasteboard
 
     @discardableResult
-    static func copyToPasteboard(_ blocks: [Block], mode: PayloadMode, options: RenderOptions = RenderOptions()) -> String {
+    static func copyToPasteboard(_ blocks: [Block], mode: PayloadMode,
+                                 options: RenderOptions = RenderOptions(),
+                                 template: StyleTemplate? = nil) -> String {
         guard !blocks.isEmpty else { return "Nothing to copy" }
 
         let pb = NSPasteboard.general
@@ -321,7 +331,7 @@ enum SketchExport {
         // One item carrying both representations lets the receiving app pick the
         // richest form it supports — editors take the image, terminals the text.
         let item = NSPasteboardItem()
-        let text = tree(blocks)
+        let text = tree(blocks, template: template)
 
         switch mode {
         case .tree:

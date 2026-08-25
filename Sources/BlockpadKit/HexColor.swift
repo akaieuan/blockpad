@@ -47,4 +47,28 @@ public enum HexColor {
         guard let c = components(hex) else { return nil }
         return string(r: c.r, g: c.g, b: c.b)
     }
+
+    // MARK: - Contrast
+
+    /// WCAG relative luminance.
+    ///
+    /// The sRGB gamma expansion matters and is not optional: averaging the raw
+    /// channels, or using a perceived-brightness shortcut, is wrong across the
+    /// whole mid-range — which is exactly where people pick colours. A checker
+    /// that is wrong in the mid-tones is worse than no checker, because it
+    /// passes the pairs a person would otherwise have squinted at.
+    public static func relativeLuminance(_ hex: String) -> Double? {
+        guard let c = components(hex) else { return nil }
+        func expand(_ channel: Double) -> Double {
+            channel <= 0.04045 ? channel / 12.92 : pow((channel + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * expand(c.r) + 0.7152 * expand(c.g) + 0.0722 * expand(c.b)
+    }
+
+    /// WCAG contrast ratio, 1 (identical) through 21 (black on white).
+    public static func contrastRatio(_ a: String, _ b: String) -> Double? {
+        guard let la = relativeLuminance(a), let lb = relativeLuminance(b) else { return nil }
+        let lighter = max(la, lb), darker = min(la, lb)
+        return (lighter + 0.05) / (darker + 0.05)
+    }
 }

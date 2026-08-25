@@ -367,7 +367,7 @@ struct PropertiesPanel: View {
     }
 
     private var canvasRowSpecs: [RowSpec] {
-        [
+        var rows: [RowSpec] = [
             RowSpec(id: "theme", glyph: "square.grid.3x3", label: "Paper") {
                 AnyView(Swatches(colors: CanvasTheme.all.map { Color(nsColor: $0.color) },
                                  names: CanvasTheme.all.map(\.name),
@@ -397,6 +397,28 @@ struct PropertiesPanel: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize())
             },
+            RowSpec(id: "template", glyph: "square.on.square.squareshape.controlhandles",
+                    label: "Template") {
+                AnyView(Menu {
+                    Button("None") { store.applyTemplate(nil) }
+                    Divider()
+                    ForEach(StyleTemplate.all, id: \.id) { template in
+                        Button {
+                            store.applyTemplate(template)
+                        } label: {
+                            if store.templateID == template.id {
+                                Label(template.name, systemImage: "checkmark")
+                            } else {
+                                Text(template.name)
+                            }
+                        }
+                    }
+                } label: {
+                    Text(store.template?.name ?? "None").font(Token.Text.value)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize())
+            },
             RowSpec(id: "guides", glyph: "ruler", label: "Guides") {
                 AnyView(Toggle("", isOn: $store.snapping)
                     .toggleStyle(.switch)
@@ -404,6 +426,24 @@ struct PropertiesPanel: View {
                     .labelsHidden())
             }
         ]
+
+        // Only shown when a template actually checks something, and only when
+        // it has something to say. A permanent "0 issues" row is noise.
+        let flagged = store.violations
+        if !flagged.isEmpty {
+            rows.append(RowSpec(id: "issues", glyph: "exclamationmark.triangle",
+                                label: flagged.count == 1 ? "1 issue" : "\(flagged.count) issues") {
+                AnyView(Button {
+                    store.selection = Set(flagged.map(\.blockID))
+                    canvas()?.needsDisplay = true
+                } label: {
+                    Text("Select").font(Token.Text.value)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Token.accent))
+            })
+        }
+        return rows
     }
 
     private var frameLabel: String {
