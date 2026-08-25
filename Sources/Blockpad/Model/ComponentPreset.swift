@@ -6,6 +6,7 @@ enum ComponentCategory: String, CaseIterable, Identifiable {
     case controls = "Controls"
     case data = "Data"
     case feedback = "Feedback"
+    case story = "Story"
 
     var id: String { rawValue }
 
@@ -15,6 +16,7 @@ enum ComponentCategory: String, CaseIterable, Identifiable {
         case .controls: return "slider.horizontal.3"
         case .data: return "tablecells"
         case .feedback: return "bell"
+        case .story: return "film"
         }
     }
 }
@@ -45,10 +47,22 @@ struct ComponentPreset: Identifiable {
         var fill: Int = 0
         var color: Int = 0
         var stroke: Double? = nil
+        /// Explicit text size. Scaffolds need a hierarchy — a story's title is
+        /// not the same weight as its steps — where a blockout does not.
+        var fontSize: Double? = nil
+        /// Corner radius override, for parts that should stay square whatever
+        /// the current style is.
+        var radius: Double? = nil
     }
 
+    /// Scaffolds arrive grouped so they move as one thing rather than as
+    /// fourteen loose rectangles. Blockouts do not — you place a nav bar in
+    /// order to take it apart.
+    var arrivesGrouped: Bool { category == .story }
+
     func build(at origin: CGPoint, style: Style) -> [Block] {
-        parts.map { part in
+        let group = arrivesGrouped ? UUID() : nil
+        return parts.map { part in
             let strokeHex = Palette.strokePresets[
                 max(0, min(Palette.strokePresets.count - 1, part.color))].hex
             let fillHex: String? = (part.kind.takesFill && part.fill > 0)
@@ -61,8 +75,10 @@ struct ComponentPreset: Identifiable {
                          fill: fillHex,
                          fillStyle: fillHex == nil ? .none : style.fillStyle,
                          strokeWidth: part.stroke ?? style.strokeWidth,
-                         cornerRadius: style.cornerRadius,
-                         opacity: 1)
+                         cornerRadius: part.radius ?? style.cornerRadius,
+                         opacity: 1,
+                         fontSize: part.fontSize,
+                         groupID: group)
         }
     }
 
@@ -79,9 +95,15 @@ struct ComponentPreset: Identifiable {
     }
 
     private static func label(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat,
-                              _ text: String, color: Int = 0) -> Part {
-        Part(kind: .text, rect: CGRect(x: x, y: y, width: w, height: 18),
-             text: text, color: color)
+                              _ text: String, color: Int = 0, size: Double? = nil) -> Part {
+        Part(kind: .text, rect: CGRect(x: x, y: y, width: w,
+                                       height: CGFloat(size ?? 15) * 1.4),
+             text: text, color: color, fontSize: size)
+    }
+
+    private static func frame(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat,
+                              _ text: String = "") -> Part {
+        Part(kind: .frame, rect: CGRect(x: x, y: y, width: w, height: h), text: text)
     }
 
     private static func dot(_ x: CGFloat, _ y: CGFloat, _ d: CGFloat, fill: Int = 0, color: Int = 0) -> Part {
@@ -90,7 +112,46 @@ struct ComponentPreset: Identifiable {
 
     // MARK: - Library
 
-    static let all: [ComponentPreset] = layout + controls + data + feedback
+    static let all: [ComponentPreset] = layout + controls + data + feedback + story
+
+    // MARK: Story
+
+    /// Storyboard and User Story are not styles, they are structures — a row of
+    /// captioned frames read left to right, and an actor with a goal and
+    /// numbered steps. That is why they live here rather than in StyleTemplate,
+    /// which holds defaults and rules. Both arrive grouped, because a scaffold
+    /// you have to reassemble is worse than no scaffold.
+    static let story: [ComponentPreset] = [
+        ComponentPreset(id: "storyboard", name: "Storyboard", symbol: "film",
+                        category: .story, size: CGSize(width: 1124, height: 268), parts: {
+            var parts: [Part] = [label(0, 0, 300, "Flow", size: 18)]
+            let frameW: CGFloat = 260, frameH: CGFloat = 160, gap: CGFloat = 28
+            for index in 0..<4 {
+                let x = CGFloat(index) * (frameW + gap)
+                parts.append(frame(x, 40, frameW, frameH, "\(index + 1)"))
+                parts.append(label(x, 216, frameW, "What happens here", color: 1, size: 13))
+            }
+            return parts
+        }()),
+
+        ComponentPreset(id: "user-story", name: "User Story", symbol: "person.text.rectangle",
+                        category: .story, size: CGSize(width: 460, height: 396), parts: {
+            var parts: [Part] = [
+                label(0, 0, 460, "As a  [role]", size: 18),
+                label(0, 32, 460, "I want to  [goal]", color: 1, size: 15),
+                label(0, 58, 460, "so that  [benefit]", color: 1, size: 15),
+                box(0, 96, 460, 1, color: 1)
+            ]
+            let rowH: CGFloat = 56, gap: CGFloat = 12
+            for index in 0..<4 {
+                let y = 120 + CGFloat(index) * (rowH + gap)
+                parts.append(box(0, y, 460, rowH, fill: 1))
+                parts.append(dot(16, y + (rowH - 24) / 2, 24, fill: 4, color: 1))
+                parts.append(label(56, y + (rowH - 21) / 2, 380, "Step \(index + 1)", size: 15))
+            }
+            return parts
+        }())
+    ]
 
     // MARK: Layout
 

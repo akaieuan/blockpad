@@ -260,6 +260,12 @@ Four templates set the defaults for what you draw next — Modern Minimal,
 Accessible, Storyboard, User Story. They never restyle what is already on the
 canvas; that is not a default, it is damage.
 
+Storyboard and User Story also bring a **scaffold** each, in the component
+drawer under Story — a row of numbered frames with captions, and an actor with a
+goal and numbered steps. Those are structures rather than styles, which is why
+they live with the components rather than in the template. They arrive grouped,
+because a scaffold you have to reassemble is worse than no scaffold.
+
 **Accessible is the one that does more than look different.** It carries rules
 rather than preferences — WCAG AA contrast at 4.5:1, 44pt minimum targets, 16pt
 minimum text — and checks the drawing against them as you work. Blocks that
@@ -316,6 +322,7 @@ Other entry points:
 ./Scripts/icon.sh                              # regenerate the icon from code
 .build/debug/Blockpad --render-sample ./out    # render the example scene + tree
 .build/debug/Blockpad --seed-demo              # load the example into the app
+.build/debug/Blockpad --seed-preset storyboard # place one component preset
 ```
 
 The icon is drawn in Core Graphics rather than stored as an asset, so it cannot

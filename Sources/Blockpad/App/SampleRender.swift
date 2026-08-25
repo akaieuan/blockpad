@@ -62,6 +62,24 @@ enum SampleRender {
 }
 
 extension SampleRender {
+    /// Places a single preset into the live store, at the origin.
+    static func seedPreset(id: String) {
+        guard let preset = ComponentPreset.all.first(where: { $0.id == id }) else {
+            print("no preset named \(id). Available: \(ComponentPreset.all.map(\.id).joined(separator: ", "))")
+            return
+        }
+        let blocks = preset.build(at: CGPoint(x: 40, y: 40), style: Style())
+        let doc = SketchDocument(blocks: blocks, frameSize: nil,
+                                 pan: CGPoint(x: 40, y: 40), zoom: 1,
+                                 theme: CanvasTheme.paper.name, sketchy: false,
+                                 recentColors: [], snapping: true, template: nil)
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Blockpad", isDirectory: true)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        try? JSONEncoder().encode(doc).write(to: base.appendingPathComponent("scene.json"))
+        print("placed \(preset.name) — \(blocks.count) blocks")
+    }
+
     /// Renders a scene supplied as JSON. Exists so a reconstruction from a tree
     /// can be rendered and compared against the original drawing, rather than
     /// judged by eye.
@@ -86,6 +104,7 @@ extension SampleRender {
 }
 
 extension SampleRender {
+
     /// Writes the §5 example into the live store so a freshly launched app has
     /// something worth photographing.
     static func seedDemoScene() {

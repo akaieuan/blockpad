@@ -29,6 +29,14 @@ if let index = arguments.firstIndex(of: "--render-scene") {
 
 // Loads a known scene into the real store, so documentation screenshots show
 // the app doing its job rather than an empty canvas.
+// Places one component preset into the live store, so a scaffold can be
+// photographed for the docs without anyone opening the drawer and dragging.
+if let index = arguments.firstIndex(of: "--seed-preset") {
+    let id = index + 1 < arguments.count ? arguments[index + 1] : ""
+    SampleRender.seedPreset(id: id)
+    exit(0)
+}
+
 if arguments.contains("--seed-demo") {
     SampleRender.seedDemoScene()
     exit(0)
