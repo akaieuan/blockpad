@@ -39,6 +39,27 @@ enum Token {
         static let separatorInset: CGFloat = 11
     }
 
+    /// The dock is its own context: a horizontal strip of icon buttons needs a
+    /// different rhythm from a stack of inspector rows, and borrowing `Space.md`
+    /// for it is what produced the crowding it had.
+    enum Dock {
+        /// Between adjacent buttons.
+        static let itemGap: CGFloat = 3
+        /// Either side of a divider, so a separator gets more air than the
+        /// items it separates.
+        static let clusterGap: CGFloat = 7
+        /// Inside the glass. Horizontal is larger than vertical because round
+        /// glyphs need more optical room off a straight edge than a flat one.
+        static let insetH: CGFloat = 8
+        static let insetV: CGFloat = 5
+        /// A divider stops short of the top and bottom, for the same reason a
+        /// row separator stops short of a panel's rounded corners.
+        static let dividerInset: CGFloat = 6
+        /// Keeps the row from lurching as the active tool's label changes
+        /// between "Select", "Rectangle" and "Draw".
+        static let labelMinWidth: CGFloat = 74
+    }
+
     enum Text {
         static let header = Font.system(size: 11, weight: .semibold)
         static let label = Font.system(size: 11, weight: .medium)

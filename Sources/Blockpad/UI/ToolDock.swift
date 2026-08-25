@@ -26,11 +26,11 @@ struct ToolDock: View {
     }
 
     var body: some View {
-        HStack(spacing: Token.Space.xs) {
+        HStack(spacing: Token.Dock.itemGap) {
             pill(spec("select"))
             pill(spec("hand"))
 
-            Divider1px()
+            divider
 
             ToolGroupButton(specs: ToolSpec.shapes,
                             currentID: $lastShape,
@@ -45,7 +45,7 @@ struct ToolDock: View {
             pill(spec("pen"))
             pill(spec("text"))
 
-            Divider1px()
+            divider
 
             pill(spec("eraser"))
             ToolButton(symbol: "square.grid.2x2",
@@ -56,8 +56,16 @@ struct ToolDock: View {
             }
             canvasMenu
         }
-        .padding(Token.Space.md)
+        .padding(.horizontal, Token.Dock.insetH)
+        .padding(.vertical, Token.Dock.insetV)
         .glassSurface(cornerRadius: Token.Radius.dock)
+    }
+
+    /// A divider carries more air than the items either side of it, which is
+    /// what makes the row read as clusters rather than as one long queue.
+    private var divider: some View {
+        Divider1px(height: buttonSize, inset: Token.Dock.dividerInset)
+            .padding(.horizontal, Token.Dock.clusterGap - Token.Dock.itemGap)
     }
 
     private func pill(_ spec: ToolSpec) -> some View {
@@ -153,7 +161,7 @@ private struct ToolGroupButton: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: -2) {
             ToolPill(symbol: activeSpec.symbol,
                      label: activeSpec.label,
                      help: "\(activeSpec.label)   \(activeSpec.key.uppercased())",
@@ -184,9 +192,16 @@ private struct ToolGroupButton: View {
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
-            .frame(width: 12, height: buttonSize)
+            .frame(width: 14, height: buttonSize)
             .help("More \(specs.first?.groupName ?? "tools")")
         }
+        // One background across the pill and its chevron, so the chevron reads
+        // as an affordance on the button rather than a detached sliver beside
+        // it. The two hit targets stay separate; only the appearance merges.
+        .background(
+            RoundedRectangle(cornerRadius: Token.Radius.control, style: .continuous)
+                .fill(Color.primary.opacity(hovering && !isActive ? Token.Ink.hover : 0))
+        )
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
     }

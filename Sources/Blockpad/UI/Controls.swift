@@ -74,8 +74,10 @@ struct ToolPill: View {
                 }
             }
             .foregroundStyle(isActive ? Token.accent : .primary.opacity(Token.Ink.primary))
-            .padding(.horizontal, expanded ? Token.Space.lg + 1 : 0)
-            .frame(minWidth: size, minHeight: size)
+            .padding(.horizontal, expanded ? Token.Space.xl : 0)
+            // A minimum width on the labelled state keeps the row from lurching
+            // as the active tool's name changes length.
+            .frame(minWidth: expanded ? Token.Dock.labelMinWidth : size, minHeight: size)
             .background(
                 RoundedRectangle(cornerRadius: Token.Radius.control, style: .continuous)
                     .fill(background)
@@ -279,11 +281,19 @@ struct RenderGlyph: View {
     }
 }
 
+/// A hairline between clusters of controls.
+///
+/// Sized from the row it sits in and inset top and bottom, rather than a fixed
+/// 18pt that happened to look right at one button size. A separator running the
+/// full height of its container is the same "unfinished" tell as one running
+/// into a rounded corner.
 struct Divider1px: View {
+    var height: CGFloat = 18
+    var inset: CGFloat = 0
+
     var body: some View {
         Rectangle()
             .fill(Color.primary.opacity(Token.Ink.hairline + 0.03))
-            .frame(width: 1, height: 18)
-            .padding(.horizontal, Token.Space.sm)
+            .frame(width: 1, height: max(1, height - inset * 2))
     }
 }
