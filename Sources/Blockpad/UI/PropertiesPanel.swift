@@ -19,6 +19,19 @@ struct PropertiesPanel: View {
     private var showsShapeProperties: Bool { hasSelection || store.tool.isDrawing }
     private var style: Style { store.effectiveStyle }
 
+    /// Text size only means something for a block that can carry text.
+    private var showsTextSize: Bool {
+        if hasSelection { return store.selectedBlocks.contains { $0.kind.takesText } }
+        return store.tool.kind?.takesText ?? false
+    }
+
+    /// What the size control should show when nothing explicit is set: the size
+    /// the text is actually rendering at, derived from stroke weight.
+    private var effectiveFontSize: Double {
+        if let explicit = style.fontSize { return explicit }
+        return Double(BlockRenderer.fontSize(forStrokeWidth: style.strokeWidth))
+    }
+
     /// Fill only means something for closed shapes; offering it for an arrow is
     /// how an inspector starts feeling like a settings screen.
     private var showsFill: Bool {
@@ -165,6 +178,28 @@ struct PropertiesPanel: View {
                                       presets: [0, 4, 8, 12, 24, 999]) { radius in
                     store.style.cornerRadius = radius
                     canvas()?.applyStyle({ $0.cornerRadius = radius }, name: "Radius")
+                })
+            })
+        }
+
+        if showsTextSize {
+            rows.append(RowSpec(id: "textSize", glyph: "textformat.size", label: "Text") {
+                AnyView(NumberControl(value: effectiveFontSize,
+                                      range: BlockRenderer.fontSizeRange,
+                                      step: 1,
+                                      presets: [12, 14, 18, 24, 36, 48, 72]) { size in
+                    store.style.fontSize = size
+                    canvas()?.applyStyle({ block in
+                        guard block.kind.takesText else { return }
+                        block.fontSize = size
+                        // A text block is sized by its type, so the box has to
+                        // follow or the selection outline drifts off the glyphs.
+                        if block.kind == .text, !block.text.isEmpty {
+                            block.rect = CGRect(origin: block.rect.standardized.origin,
+                                                size: BlockRenderer.measure(block.text,
+                                                                            size: CGFloat(size)))
+                        }
+                    }, name: "Text Size")
                 })
             })
         }

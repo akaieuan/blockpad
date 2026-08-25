@@ -24,6 +24,7 @@ struct Style: Equatable {
     var strokeWidth: Double = 2
     var cornerRadius: Double = 10
     var opacity: Double = 1
+    var fontSize: Double?
 }
 
 struct SketchDocument: Codable {
@@ -40,7 +41,7 @@ struct SketchDocument: Codable {
 /// Canvas contents persist across hide/show and across app restart (§2).
 @MainActor
 final class SketchStore: ObservableObject {
-    @Published var blocks: [Block] = [] { didSet { scheduleSave() } }
+    @Published var blocks: [Block] = [] { didSet { pruneSelection(); scheduleSave() } }
     @Published var selection: Set<UUID> = []
     @Published var tool: Tool = .select
     /// Excalidraw's padlock: when off, the tool reverts to select after one
@@ -78,6 +79,17 @@ final class SketchStore: ObservableObject {
 
     func block(_ id: UUID) -> Block? { blocks.first { $0.id == id } }
 
+    /// Undo restores blocks but not the selection that went with them, so a
+    /// selection can end up naming blocks that no longer exist. The inspector
+    /// then shows Order and Edit rows that act on nothing. Drop the ghosts.
+    private func pruneSelection() {
+        guard !selection.isEmpty else { return }
+        let live = Set(blocks.map(\.id))
+        let kept = selection.intersection(live)
+        guard kept.count != selection.count else { return }
+        selection = kept
+    }
+
     var selectedBlocks: [Block] { blocks.filter { selection.contains($0.id) } }
 
     var nextZ: Int { (blocks.map(\.z).max() ?? 0) + 1 }
@@ -95,7 +107,8 @@ final class SketchStore: ObservableObject {
         guard let first = selectedBlocks.first else { return style }
         return Style(stroke: first.stroke, fill: first.fill,
                      fillStyle: first.fillStyle, strokeWidth: first.strokeWidth,
-                     cornerRadius: first.cornerRadius, opacity: first.opacity)
+                     cornerRadius: first.cornerRadius, opacity: first.opacity,
+                     fontSize: first.fontSize)
     }
 
     /// Colours the user has actually reached for, newest first. Arbitrary

@@ -110,6 +110,10 @@ struct Block: Identifiable, Codable, Equatable {
     var strokeWidth: Double = 2
     var cornerRadius: Double = 10
     var opacity: Double = 1
+    /// Explicit text size. nil keeps the old behaviour — size derived from
+    /// stroke weight — so a block only carries a number once someone has
+    /// actually set one.
+    var fontSize: Double?
     /// Stable per-block seed so roughness never shimmers between redraws.
     var seed: UInt64 = UInt64.random(in: 1...UInt64.max)
     /// Freehand points, `.pen` only. Document coordinates.
@@ -119,7 +123,7 @@ struct Block: Identifiable, Codable, Equatable {
     init(id: UUID = UUID(), kind: BlockKind, parentID: UUID? = nil, rect: CGRect,
          text: String = "", stroke: String = Palette.defaultStroke, fill: String? = nil,
          fillStyle: FillStyle = .solid, strokeWidth: Double = 2,
-         cornerRadius: Double = 10, opacity: Double = 1,
+         cornerRadius: Double = 10, opacity: Double = 1, fontSize: Double? = nil,
          seed: UInt64 = UInt64.random(in: 1...UInt64.max),
          points: [CGPoint] = [], z: Int = 0) {
         self.id = id
@@ -133,6 +137,7 @@ struct Block: Identifiable, Codable, Equatable {
         self.strokeWidth = strokeWidth
         self.cornerRadius = cornerRadius
         self.opacity = opacity
+        self.fontSize = fontSize
         self.seed = seed
         self.points = points
         self.z = z
@@ -143,7 +148,7 @@ struct Block: Identifiable, Codable, Equatable {
     /// Includes the retired palette keys so old scenes can still be read.
     private enum CodingKeys: String, CodingKey {
         case id, kind, parentID, rect, text, stroke, fill, fillStyle
-        case strokeWidth, cornerRadius, opacity, seed, points, z
+        case strokeWidth, cornerRadius, opacity, fontSize, seed, points, z
         case colorIndex, fillIndex, strokeIndex, corner
     }
 
@@ -192,6 +197,7 @@ struct Block: Identifiable, Codable, Equatable {
             let corner = try c.decodeIfPresent(String.self, forKey: .corner) ?? "round"
             cornerRadius = corner == "sharp" ? 0 : 10
         }
+        fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize)
         seed = try c.decodeIfPresent(UInt64.self, forKey: .seed) ?? UInt64.random(in: 1...UInt64.max)
         points = try c.decodeIfPresent([CGPoint].self, forKey: .points) ?? []
         z = try c.decodeIfPresent(Int.self, forKey: .z) ?? 0
@@ -210,6 +216,7 @@ struct Block: Identifiable, Codable, Equatable {
         try c.encode(strokeWidth, forKey: .strokeWidth)
         try c.encode(cornerRadius, forKey: .cornerRadius)
         try c.encode(opacity, forKey: .opacity)
+        try c.encodeIfPresent(fontSize, forKey: .fontSize)
         try c.encode(seed, forKey: .seed)
         try c.encode(points, forKey: .points)
         try c.encode(z, forKey: .z)

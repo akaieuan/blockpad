@@ -172,7 +172,10 @@ final class CanvasView: NSView {
 
     private func handles(for block: Block) -> [Handle] {
         if block.kind.isLinear { return [.topLeft, .bottomRight] }
-        if block.kind == .text || block.kind == .pen { return [] }
+        // Text scales rather than stretches, so it only needs the corners —
+        // an edge handle would imply a reflow that a single line does not do.
+        if block.kind == .text { return [.topLeft, .topRight, .bottomLeft, .bottomRight] }
+        if block.kind == .pen { return [] }
         return Handle.allCases
     }
 
@@ -380,6 +383,25 @@ final class CanvasView: NSView {
                     ? CGRect(x: p.x, y: p.y, width: far.x - p.x, height: far.y - p.y)
                     : CGRect(x: original.origin.x, y: original.origin.y,
                              width: p.x - original.origin.x, height: p.y - original.origin.y)
+            } else if block.kind == .text {
+                // Dragging a corner scales the type. Stretching the box would do
+                // nothing visible, which is why text had no handles at all.
+                let box = original.standardized
+                let proposed = handle.resize(box, to: docPoint).standardized
+                let ratio = box.width > 1 ? proposed.width / box.width : 1
+                let base = BlockRenderer.fontSize(for: block)
+                let scaled = min(max((Double(base * ratio)).rounded(),
+                                     BlockRenderer.fontSizeRange.lowerBound),
+                                 BlockRenderer.fontSizeRange.upperBound)
+                blocks[index].fontSize = scaled
+                let size = BlockRenderer.measure(block.text, size: CGFloat(scaled))
+                // Anchor the corner opposite the one being dragged, so the block
+                // grows away from the hand rather than jumping under it.
+                let anchor = handle.anchor(in: box)
+                blocks[index].rect = CGRect(
+                    x: anchor.x == box.maxX ? anchor.x - size.width : anchor.x,
+                    y: anchor.y == box.maxY ? anchor.y - size.height : anchor.y,
+                    width: size.width, height: size.height)
             } else {
                 blocks[index].rect = handle.resize(original.standardized,
                                                    to: snap(docPoint, disabled: noSnap))
@@ -492,7 +514,8 @@ final class CanvasView: NSView {
               fillStyle: store.style.fillStyle,
               strokeWidth: store.style.strokeWidth,
               cornerRadius: store.style.cornerRadius,
-              opacity: store.style.opacity)
+              opacity: store.style.opacity,
+              fontSize: store.style.fontSize)
     }
 
     private func beginCreating(kind: BlockKind, at docPoint: CGPoint) {
@@ -733,7 +756,7 @@ final class CanvasView: NSView {
 
         let field = NSTextField(frame: editorFrame(for: block))
         field.stringValue = block.text
-        field.font = BlockRenderer.canvasFont(size: BlockRenderer.fontSize(forStrokeWidth: block.strokeWidth) * store.zoom)
+        field.font = BlockRenderer.canvasFont(size: BlockRenderer.fontSize(for: block) * store.zoom)
         field.textColor = store.theme.inkAdjusted(Palette.color(block.stroke))
         field.alignment = block.kind == .text ? .natural : .center
         field.isBordered = false
@@ -752,7 +775,7 @@ final class CanvasView: NSView {
 
     private func editorFrame(for block: Block) -> CGRect {
         let r = toView(block.bounds)
-        let height = max(24, BlockRenderer.fontSize(forStrokeWidth: block.strokeWidth) * 1.5 * store.zoom)
+        let height = max(24, BlockRenderer.fontSize(for: block) * 1.5 * store.zoom)
         switch block.kind {
         case .text:
             return CGRect(x: r.minX, y: r.minY, width: max(80, r.width), height: height)
@@ -790,7 +813,7 @@ final class CanvasView: NSView {
         block.text = text
         if block.kind == .text {
             block.rect = CGRect(origin: block.rect.origin,
-                                size: BlockRenderer.measure(text, strokeWidth: block.strokeWidth))
+                                size: BlockRenderer.measure(text, size: BlockRenderer.fontSize(for: block)))
         }
         var blocks = store.blocks
         if let i = blocks.firstIndex(where: { $0.id == id }) { blocks[i] = block }
@@ -849,6 +872,17 @@ enum Handle: CaseIterable {
         case .bottom:      return CGPoint(x: r.midX, y: r.maxY)
         case .bottomLeft:  return CGPoint(x: r.minX, y: r.maxY)
         case .left:        return CGPoint(x: r.minX, y: r.midY)
+        }
+    }
+
+    /// The corner that stays put while this handle is dragged.
+    func anchor(in r: CGRect) -> CGPoint {
+        switch self {
+        case .topLeft:     return CGPoint(x: r.maxX, y: r.maxY)
+        case .topRight:    return CGPoint(x: r.minX, y: r.maxY)
+        case .bottomLeft:  return CGPoint(x: r.maxX, y: r.minY)
+        case .bottomRight: return CGPoint(x: r.minX, y: r.minY)
+        case .top, .bottom, .left, .right: return CGPoint(x: r.minX, y: r.minY)
         }
     }
 

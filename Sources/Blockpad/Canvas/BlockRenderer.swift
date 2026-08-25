@@ -23,8 +23,19 @@ enum BlockRenderer {
         NSFont.systemFont(ofSize: size, weight: weight)
     }
 
-    /// Text scales with stroke weight, so a bold outline carries bold-ish text
-    /// without a separate control.
+    /// The size a block's text actually renders at. An explicit size wins;
+    /// otherwise it still follows stroke weight, which is what every block drawn
+    /// before this control existed relies on.
+    static func fontSize(for block: Block) -> CGFloat {
+        if let explicit = block.fontSize { return CGFloat(explicit) }
+        return fontSize(forStrokeWidth: block.strokeWidth)
+    }
+
+    /// The range the size control offers, and the default it starts from.
+    static let fontSizeRange: ClosedRange<Double> = 8...160
+
+    /// Text scales with stroke weight when no explicit size is set, so a bold
+    /// outline carries bold-ish text without anyone touching a control.
     static func fontSize(forStrokeWidth width: Double) -> CGFloat {
         switch width {
         case ..<1.4: return 13
@@ -39,8 +50,8 @@ enum BlockRenderer {
         max(0, min(CGFloat(block.cornerRadius), min(r.width, r.height) / 2))
     }
 
-    static func measure(_ text: String, strokeWidth: Double) -> CGSize {
-        let font = canvasFont(size: fontSize(forStrokeWidth: strokeWidth))
+    static func measure(_ text: String, size: CGFloat) -> CGSize {
+        let font = canvasFont(size: size)
         let bounds = (text as NSString).boundingRect(
             with: CGSize(width: 4000, height: 4000),
             options: [.usesLineFragmentOrigin, .usesFontLeading],
@@ -161,11 +172,11 @@ enum BlockRenderer {
         let para = NSMutableParagraphStyle()
         para.alignment = .center
         para.lineBreakMode = .byTruncatingTail
-        let size = measure(block.text, strokeWidth: block.strokeWidth)
+        let size = measure(block.text, size: fontSize(for: block))
         drawString(block.text,
                    in: CGRect(x: r.minX + 6, y: r.midY - size.height / 2,
                               width: max(1, r.width - 12), height: size.height),
-                   attrs: [.font: canvasFont(size: fontSize(forStrokeWidth: block.strokeWidth)),
+                   attrs: [.font: canvasFont(size: fontSize(for: block)),
                            .foregroundColor: color, .paragraphStyle: para],
                    in: ctx)
     }
@@ -233,7 +244,7 @@ enum BlockRenderer {
         guard !block.text.isEmpty else { return }
         let color = options.theme.inkAdjusted(Palette.color(block.stroke))
         drawString(block.text, in: block.rect.standardized,
-                   attrs: [.font: canvasFont(size: fontSize(forStrokeWidth: block.strokeWidth)),
+                   attrs: [.font: canvasFont(size: fontSize(for: block)),
                            .foregroundColor: color],
                    in: ctx)
     }
