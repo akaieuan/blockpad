@@ -19,6 +19,29 @@ struct PropertiesPanel: View {
     private var showsShapeProperties: Bool { hasSelection || store.tool.isDrawing }
     private var style: Style { store.effectiveStyle }
 
+    /// Angle and bow only mean anything for a connector.
+    private var linearSelection: [Block] {
+        store.selectedBlocks.filter { $0.kind.isLinear }
+    }
+
+    private var showsConnector: Bool {
+        if hasSelection { return !linearSelection.isEmpty }
+        return store.tool.kind?.isLinear ?? false
+    }
+
+    /// Heading in degrees, 0 pointing right, counting clockwise because the
+    /// canvas is y-down.
+    private var connectorAngle: Double {
+        guard let first = linearSelection.first else { return 0 }
+        let radians = Connector.angle(of: first.rect)
+        let degrees = Double(radians * 180 / .pi)
+        return degrees < 0 ? degrees + 360 : degrees
+    }
+
+    private var connectorCurve: Double {
+        (linearSelection.first?.curve ?? 0) * 100
+    }
+
     /// Text size only means something for a block that can carry text.
     private var showsTextSize: Bool {
         if hasSelection { return store.selectedBlocks.contains { $0.kind.takesText } }
@@ -200,6 +223,39 @@ struct PropertiesPanel: View {
                                                                             size: CGFloat(size)))
                         }
                     }, name: "Text Size")
+                })
+            })
+        }
+
+        if showsConnector, hasSelection {
+            rows.append(RowSpec(id: "angle", glyph: "angle", label: "Angle") {
+                AnyView(NumberControl(value: connectorAngle,
+                                      range: 0...360,
+                                      step: 1,
+                                      wraps: true,
+                                      unit: "°",
+                                      presets: [0, 45, 90, 135, 180, 225, 270, 315]) { degrees in
+                    let radians = CGFloat(degrees) * .pi / 180
+                    canvas()?.applyStyle({ block in
+                        guard block.kind.isLinear else { return }
+                        let start = Connector.endpoints(of: block.rect).start
+                        block.rect = Connector.rect(from: start, angle: radians,
+                                                    length: Connector.length(of: block.rect))
+                    }, name: "Angle")
+                })
+            })
+
+            rows.append(RowSpec(id: "curve", glyph: "point.topleft.down.to.point.bottomright.curvepath",
+                                label: "Bow") {
+                AnyView(NumberControl(value: connectorCurve,
+                                      range: -150...150,
+                                      step: 5,
+                                      unit: "%",
+                                      presets: [-60, -30, 0, 30, 60]) { percent in
+                    canvas()?.applyStyle({ block in
+                        guard block.kind.isLinear else { return }
+                        block.curve = percent / 100
+                    }, name: "Bow")
                 })
             })
         }

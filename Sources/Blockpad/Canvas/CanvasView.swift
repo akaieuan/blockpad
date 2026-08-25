@@ -125,7 +125,11 @@ final class CanvasView: NSView {
                 ctx.setFillColor(NSColor.white.cgColor)
                 ctx.setStrokeColor(Palette.selection.cgColor)
                 ctx.setLineWidth(1.5)
-                let path = CGPath(roundedRect: h, cornerWidth: 2, cornerHeight: 2, transform: nil)
+                // The bow handle is round, so it does not read as a corner you
+                // could drag to resize.
+                let path = handle == .curve
+                    ? CGPath(ellipseIn: h.insetBy(dx: -0.5, dy: -0.5), transform: nil)
+                    : CGPath(roundedRect: h, cornerWidth: 2, cornerHeight: 2, transform: nil)
                 ctx.addPath(path); ctx.fillPath()
                 ctx.addPath(path); ctx.strokePath()
             }
@@ -170,8 +174,20 @@ final class CanvasView: NSView {
         }
     }
 
+    /// Pulls `point` onto the nearest 15° spoke around `anchor`, preserving its
+    /// distance. Shared by drawing a connector and by dragging one's endpoint,
+    /// so the two behave the same.
+    private func snapToAngle(_ point: CGPoint, around anchor: CGPoint) -> CGPoint {
+        let angle = atan2(point.y - anchor.y, point.x - anchor.x)
+        let step = CGFloat.pi / 12
+        let snapped = (angle / step).rounded() * step
+        let length = hypot(point.x - anchor.x, point.y - anchor.y)
+        return CGPoint(x: anchor.x + cos(snapped) * length,
+                       y: anchor.y + sin(snapped) * length)
+    }
+
     private func handles(for block: Block) -> [Handle] {
-        if block.kind.isLinear { return [.topLeft, .bottomRight] }
+        if block.kind.isLinear { return [.topLeft, .bottomRight, .curve] }
         // Text scales rather than stretches, so it only needs the corners —
         // an edge handle would imply a reflow that a single line does not do.
         if block.kind == .text { return [.topLeft, .topRight, .bottomLeft, .bottomRight] }
@@ -182,8 +198,12 @@ final class CanvasView: NSView {
     private func handleRect(_ handle: Handle, for block: Block) -> CGRect {
         let p: CGPoint
         if block.kind.isLinear {
-            p = toView(handle == .topLeft ? block.rect.origin
-                                          : CGPoint(x: block.rect.maxX, y: block.rect.maxY))
+            let (start, end) = block.endpoints
+            switch handle {
+            case .topLeft:     p = toView(start)
+            case .curve:       p = toView(block.curveApex)
+            default:           p = toView(end)
+            }
         } else {
             p = handle.point(in: toView(block.bounds).insetBy(dx: -4, dy: -4))
         }
@@ -208,9 +228,23 @@ final class CanvasView: NSView {
                 }
             case .arrow, .line:
                 let tolerance = max(8, CGFloat(block.strokeWidth) * 3) / store.zoom
-                if distanceToSegment(docPoint, block.rect.origin,
-                                     CGPoint(x: block.rect.maxX, y: block.rect.maxY)) < tolerance {
-                    return block
+                let (start, end) = block.endpoints
+                if block.curve == 0 {
+                    if distanceToSegment(docPoint, start, end) < tolerance { return block }
+                } else {
+                    // Flatten the bow and test each chunk; a curved arrow that
+                    // only responds along its chord is maddening to grab.
+                    let control = block.curveControl
+                    var previous = start
+                    for step in 1...12 {
+                        let t = CGFloat(step) / 12
+                        let u = 1 - t
+                        let point = CGPoint(
+                            x: u * u * start.x + 2 * u * t * control.x + t * t * end.x,
+                            y: u * u * start.y + 2 * u * t * control.y + t * t * end.y)
+                        if distanceToSegment(docPoint, previous, point) < tolerance { return block }
+                        previous = point
+                    }
                 }
             default:
                 if block.bounds.insetBy(dx: -4, dy: -4).contains(docPoint) { return block }
@@ -304,13 +338,7 @@ final class CanvasView: NSView {
                 var end = block.kind.isLinear ? docPoint : snap(docPoint, disabled: noSnap)
                 if constrain {
                     if block.kind.isLinear {
-                        // Snap the vector to 15° increments.
-                        let angle = atan2(end.y - start.y, end.x - start.x)
-                        let step = CGFloat.pi / 12
-                        let snapped = (angle / step).rounded() * step
-                        let length = hypot(end.x - start.x, end.y - start.y)
-                        end = CGPoint(x: start.x + cos(snapped) * length,
-                                      y: start.y + sin(snapped) * length)
+                        end = snapToAngle(end, around: start)
                     } else {
                         let side = max(abs(end.x - start.x), abs(end.y - start.y))
                         end = CGPoint(x: start.x + side * (end.x < start.x ? -1 : 1),
@@ -367,7 +395,7 @@ final class CanvasView: NSView {
 
             var updated = snapshot
             for i in updated.indices where store.selection.contains(updated[i].id) {
-                updated[i].rect = snapshot[i].rect.offsetBy(dx: dx, dy: dy)
+                updated[i].rect = snapshot[i].rect.translated(dx: dx, dy: dy)
                 updated[i].points = snapshot[i].points.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
             }
             store.blocks = updated
@@ -377,12 +405,32 @@ final class CanvasView: NSView {
             var blocks = snapshot
             let block = snapshot[index]
             if block.kind.isLinear {
-                let p = docPoint
-                let far = CGPoint(x: original.maxX, y: original.maxY)
-                blocks[index].rect = handle == .topLeft
-                    ? CGRect(x: p.x, y: p.y, width: far.x - p.x, height: far.y - p.y)
-                    : CGRect(x: original.origin.x, y: original.origin.y,
-                             width: p.x - original.origin.x, height: p.y - original.origin.y)
+                let origin = original.origin
+                let far = CGPoint(x: origin.x + original.size.width,
+                                  y: origin.y + original.size.height)
+                if handle == .curve {
+                    // Bow is the signed perpendicular distance from the chord,
+                    // normalised by its length so the shape survives a resize.
+                    let dx = far.x - origin.x, dy = far.y - origin.y
+                    let length = hypot(dx, dy)
+                    if length > 0.001 {
+                        let mid = CGPoint(x: (origin.x + far.x) / 2, y: (origin.y + far.y) / 2)
+                        let nx = -dy / length, ny = dx / length
+                        let reach = (docPoint.x - mid.x) * nx + (docPoint.y - mid.y) * ny
+                        blocks[index].curve = Double(max(-1.5, min(1.5, reach / length)))
+                    }
+                } else {
+                    var moving = docPoint
+                    if constrain {
+                        let anchor = handle == .topLeft ? far : origin
+                        moving = snapToAngle(moving, around: anchor)
+                    }
+                    blocks[index].rect = handle == .topLeft
+                        ? CGRect(x: moving.x, y: moving.y,
+                                 width: far.x - moving.x, height: far.y - moving.y)
+                        : CGRect(x: origin.x, y: origin.y,
+                                 width: moving.x - origin.x, height: moving.y - origin.y)
+                }
             } else if block.kind == .text {
                 // Dragging a corner scales the type. Stretching the box would do
                 // nothing visible, which is why text had no handles at all.
@@ -662,7 +710,7 @@ final class CanvasView: NSView {
 
     private func nudge(dx: CGFloat, dy: CGFloat) {
         applyStyle({ block in
-            block.rect = block.rect.offsetBy(dx: dx, dy: dy)
+            block.rect = block.rect.translated(dx: dx, dy: dy)
             block.points = block.points.map { CGPoint(x: $0.x + dx, y: $0.y + dy) }
         }, name: "Move")
     }
@@ -682,7 +730,7 @@ final class CanvasView: NSView {
             var copy = block
             copy.id = UUID()
             copy.seed = UInt64.random(in: 1...UInt64.max)
-            copy.rect = copy.rect.offsetBy(dx: gridStep * 2, dy: gridStep * 2)
+            copy.rect = copy.rect.translated(dx: gridStep * 2, dy: gridStep * 2)
             copy.points = copy.points.map { CGPoint(x: $0.x + gridStep * 2, y: $0.y + gridStep * 2) }
             copy.z = (blocks.map(\.z).max() ?? 0) + 1
             blocks.append(copy)
@@ -861,6 +909,8 @@ private enum DragState {
 
 enum Handle: CaseIterable {
     case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
+    /// Connectors only. Sits on the bow and sets how far it leaves the chord.
+    case curve
 
     func point(in r: CGRect) -> CGPoint {
         switch self {
@@ -872,6 +922,7 @@ enum Handle: CaseIterable {
         case .bottom:      return CGPoint(x: r.midX, y: r.maxY)
         case .bottomLeft:  return CGPoint(x: r.minX, y: r.maxY)
         case .left:        return CGPoint(x: r.minX, y: r.midY)
+        case .curve:       return CGPoint(x: r.midX, y: r.midY)
         }
     }
 
@@ -882,7 +933,7 @@ enum Handle: CaseIterable {
         case .topRight:    return CGPoint(x: r.minX, y: r.maxY)
         case .bottomLeft:  return CGPoint(x: r.maxX, y: r.minY)
         case .bottomRight: return CGPoint(x: r.minX, y: r.minY)
-        case .top, .bottom, .left, .right: return CGPoint(x: r.minX, y: r.minY)
+        case .top, .bottom, .left, .right, .curve: return CGPoint(x: r.minX, y: r.minY)
         }
     }
 
@@ -897,6 +948,7 @@ enum Handle: CaseIterable {
         case .bottom:      maxY = p.y
         case .bottomLeft:  minX = p.x; maxY = p.y
         case .left:        minX = p.x
+        case .curve:       break
         }
         return CGRect(x: min(minX, maxX), y: min(minY, maxY),
                       width: abs(maxX - minX), height: abs(maxY - minY))

@@ -256,13 +256,14 @@ enum BlockRenderer {
         ctx.restoreGState()
     }
 
-    /// Arrows and lines run corner to corner of their (unstandardized) rect, so
-    /// the drag direction is preserved and the head lands where you released.
+    /// Connectors run from one endpoint to the other, bowing through a
+    /// quadratic control point when they carry a curve.
     private static func drawLinear(_ block: Block, in ctx: CGContext, options: RenderOptions) {
-        let p1 = block.rect.origin
-        let p2 = CGPoint(x: block.rect.maxX, y: block.rect.maxY)
+        let (p1, p2) = block.endpoints
         guard hypot(p2.x - p1.x, p2.y - p1.y) > 1 else { return }
         let color = options.theme.inkAdjusted(Palette.color(block.stroke))
+        let control = block.curveControl
+        let curved = block.curve != 0
 
         ctx.saveGState()
         ctx.setStrokeColor(color.cgColor)
@@ -270,19 +271,27 @@ enum BlockRenderer {
         ctx.setLineCap(.round)
         ctx.setLineJoin(.round)
 
-        if options.sketchy {
+        if options.sketchy, !curved {
             var rough = Rough(seed: block.seed)
             ctx.addPath(rough.lineSegment(p1, p2))
         } else {
             let path = CGMutablePath()
             path.move(to: p1)
-            path.addLine(to: p2)
+            if curved {
+                path.addQuadCurve(to: p2, control: control)
+            } else {
+                path.addLine(to: p2)
+            }
             ctx.addPath(path)
         }
         ctx.strokePath()
 
         if block.kind == .arrow {
-            let angle = atan2(p2.y - p1.y, p2.x - p1.x)
+            // The head follows the tangent at the end, which for a quadratic is
+            // the direction from the control point — not from the start, or a
+            // bowed arrow points somewhere its line never went.
+            let from = curved ? control : p1
+            let angle = atan2(p2.y - from.y, p2.x - from.x)
             let headLength = 10 + CGFloat(block.strokeWidth) * 2.2
             let head = CGMutablePath()
             for spread in [CGFloat.pi * 0.85, -CGFloat.pi * 0.85] {

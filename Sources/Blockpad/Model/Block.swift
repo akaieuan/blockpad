@@ -114,6 +114,9 @@ struct Block: Identifiable, Codable, Equatable {
     /// stroke weight — so a block only carries a number once someone has
     /// actually set one.
     var fontSize: Double?
+    /// How far a connector bows out of its chord, as a signed fraction of the
+    /// chord's length. Zero is a straight line; the sign picks a side.
+    var curve: Double = 0
     /// Stable per-block seed so roughness never shimmers between redraws.
     var seed: UInt64 = UInt64.random(in: 1...UInt64.max)
     /// Freehand points, `.pen` only. Document coordinates.
@@ -124,7 +127,7 @@ struct Block: Identifiable, Codable, Equatable {
          text: String = "", stroke: String = Palette.defaultStroke, fill: String? = nil,
          fillStyle: FillStyle = .solid, strokeWidth: Double = 2,
          cornerRadius: Double = 10, opacity: Double = 1, fontSize: Double? = nil,
-         seed: UInt64 = UInt64.random(in: 1...UInt64.max),
+         curve: Double = 0, seed: UInt64 = UInt64.random(in: 1...UInt64.max),
          points: [CGPoint] = [], z: Int = 0) {
         self.id = id
         self.kind = kind
@@ -138,6 +141,7 @@ struct Block: Identifiable, Codable, Equatable {
         self.cornerRadius = cornerRadius
         self.opacity = opacity
         self.fontSize = fontSize
+        self.curve = curve
         self.seed = seed
         self.points = points
         self.z = z
@@ -148,7 +152,7 @@ struct Block: Identifiable, Codable, Equatable {
     /// Includes the retired palette keys so old scenes can still be read.
     private enum CodingKeys: String, CodingKey {
         case id, kind, parentID, rect, text, stroke, fill, fillStyle
-        case strokeWidth, cornerRadius, opacity, fontSize, seed, points, z
+        case strokeWidth, cornerRadius, opacity, fontSize, curve, seed, points, z
         case colorIndex, fillIndex, strokeIndex, corner
     }
 
@@ -198,6 +202,7 @@ struct Block: Identifiable, Codable, Equatable {
             cornerRadius = corner == "sharp" ? 0 : 10
         }
         fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize)
+        curve = try c.decodeIfPresent(Double.self, forKey: .curve) ?? 0
         seed = try c.decodeIfPresent(UInt64.self, forKey: .seed) ?? UInt64.random(in: 1...UInt64.max)
         points = try c.decodeIfPresent([CGPoint].self, forKey: .points) ?? []
         z = try c.decodeIfPresent(Int.self, forKey: .z) ?? 0
@@ -217,23 +222,79 @@ struct Block: Identifiable, Codable, Equatable {
         try c.encode(cornerRadius, forKey: .cornerRadius)
         try c.encode(opacity, forKey: .opacity)
         try c.encodeIfPresent(fontSize, forKey: .fontSize)
+        try c.encode(curve, forKey: .curve)
         try c.encode(seed, forKey: .seed)
         try c.encode(points, forKey: .points)
         try c.encode(z, forKey: .z)
     }
 
-    /// The rect to hit-test and frame against. Linear shapes keep their vector.
+    /// Where a connector starts and ends.
+    ///
+    /// Read straight off the stored size rather than through `maxX`/`maxY`:
+    /// those standardize, so a negative width collapsed the vector and an arrow
+    /// could only ever point down and to the right. The sign of the size *is*
+    /// the direction.
+    var endpoints: (start: CGPoint, end: CGPoint) {
+        (rect.origin, CGPoint(x: rect.origin.x + rect.size.width,
+                              y: rect.origin.y + rect.size.height))
+    }
+
+    /// The quadratic control point that bows a connector off its chord.
+    var curveControl: CGPoint {
+        let (a, b) = endpoints
+        let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+        guard curve != 0 else { return mid }
+        let dx = b.x - a.x, dy = b.y - a.y
+        let length = hypot(dx, dy)
+        guard length > 0.001 else { return mid }
+        // Perpendicular to the chord, scaled by the bow. Doubled because a
+        // quadratic passes through half the control point's offset.
+        let nx = -dy / length, ny = dx / length
+        let offset = CGFloat(curve) * length * 2
+        return CGPoint(x: mid.x + nx * offset, y: mid.y + ny * offset)
+    }
+
+    /// The rect to hit-test and frame against.
     var bounds: CGRect {
         if kind == .pen, !points.isEmpty {
             let xs = points.map(\.x), ys = points.map(\.y)
             return CGRect(x: xs.min()!, y: ys.min()!,
                           width: xs.max()! - xs.min()!, height: ys.max()! - ys.min()!)
         }
+        if kind.isLinear {
+            let (a, b) = endpoints
+            var box = CGRect(x: min(a.x, b.x), y: min(a.y, b.y),
+                             width: abs(b.x - a.x), height: abs(b.y - a.y))
+            if curve != 0 {
+                // The bow leaves the chord, so the chord's box is not the shape's.
+                let apex = curveApex
+                box = box.union(CGRect(x: apex.x, y: apex.y, width: 0.001, height: 0.001))
+            }
+            return box
+        }
         return rect.standardized
+    }
+
+    /// The furthest point of the bow from the chord — where the curve actually
+    /// reaches, which is half way to the control point.
+    var curveApex: CGPoint {
+        let (a, b) = endpoints
+        let c = curveControl
+        return CGPoint(x: 0.25 * a.x + 0.5 * c.x + 0.25 * b.x,
+                       y: 0.25 * a.y + 0.5 * c.y + 0.25 * b.y)
     }
 }
 
 extension CGRect {
+    /// Translate without standardizing.
+    ///
+    /// `offsetBy` returns a standardized rect, which silently discards a
+    /// negative width or height. For a connector that sign *is* the direction,
+    /// so moving one would flip it end for end.
+    func translated(dx: CGFloat, dy: CGFloat) -> CGRect {
+        CGRect(x: origin.x + dx, y: origin.y + dy, width: size.width, height: size.height)
+    }
+
     func safeInset(by d: CGFloat) -> CGRect {
         guard width > d * 2, height > d * 2 else { return self }
         return insetBy(dx: d, dy: d)

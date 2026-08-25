@@ -16,18 +16,52 @@ enum PayloadMode: String, CaseIterable, Identifiable {
         }
     }
 
+    /// What the mode is for. Deliberately not a token count: the old labels
+    /// hardcoded "~120 tok" and friends, which were a guess for one particular
+    /// scene and wrong for every other one — and text tokens cannot be
+    /// estimated honestly without asking the API.
     var detail: String {
         switch self {
-        case .tree: return "~120 tok · structure"
-        case .treeAndImage: return "~1.8k tok · structure + feel"
-        case .image: return "~1.7k tok · annotated"
+        case .tree: return "structure"
+        case .treeAndImage: return "structure + feel"
+        case .image: return "annotated"
         }
     }
+
+    /// A size the app can actually stand behind, for the scene in front of it.
+    /// The tree is quoted in characters because that is what is knowable
+    /// locally; the image in tokens because that side is pure arithmetic.
+    func measurement(tree: String, imageSize: CGSize) -> String {
+        switch self {
+        case .tree:
+            return "\(tree.count) chars"
+        case .image:
+            return "~\(SketchExport.imageTokens(for: imageSize)) tok"
+        case .treeAndImage:
+            return "\(tree.count) chars + ~\(SketchExport.imageTokens(for: imageSize)) tok"
+        }
+    }
+}
+
+private extension Int {
+    func quantized(to step: Int) -> Int { step <= 1 ? self : (self / step) * step }
 }
 
 enum SketchExport {
 
     static let padding: CGFloat = 32
+
+    /// What an image of this size costs a Claude request.
+    ///
+    /// Anything longer than 1568px on its long edge is resized first, and the
+    /// charge is (width x height) / 750 on the *resized* dimensions — skipping
+    /// the resize overstates a large canvas several times over.
+    static func imageTokens(for size: CGSize) -> Int {
+        guard size.width > 0, size.height > 0 else { return 0 }
+        let longEdge = max(size.width, size.height)
+        let scale = min(1, 1568 / longEdge)
+        return Int(((size.width * scale).rounded() * (size.height * scale).rounded() / 750).rounded())
+    }
 
     // MARK: - Image
 
@@ -179,6 +213,15 @@ enum SketchExport {
             parts.append("Text")
         case .box:
             parts.append("Box \(Int(r.width.rounded()))x\(Int(r.height.rounded()))")
+        case .arrow, .line:
+            // A connector's bounding box says nothing about which way it runs,
+            // and two arrows pointing opposite ways have the same box. What an
+            // agent needs is the heading, so emit that instead of a size.
+            parts.append("\(block.kind.label) \(Int(Connector.length(of: block.rect).rounded()))")
+            let degrees = Connector.angle(of: block.rect) * 180 / .pi
+            let normalized = Int((degrees < 0 ? degrees + 360 : degrees).rounded())
+                .quantized(to: 1)
+            parts.append("\(normalized)°")
         default:
             parts.append(block.kind.label)
         }
@@ -220,8 +263,11 @@ enum SketchExport {
         if let fill = block.fill, block.fillStyle != .none {
             parts.append("fill \(fill)")
         }
-        if abs(block.cornerRadius - 10) > 0.5 {
+        if abs(block.cornerRadius - 10) > 0.5, !block.kind.isLinear {
             parts.append("r\(Int(block.cornerRadius.rounded()))")
+        }
+        if block.kind.isLinear, block.curve != 0 {
+            parts.append("bow \(Int((block.curve * 100).rounded()))%")
         }
 
         lines.append(indent + parts.joined(separator: "  "))

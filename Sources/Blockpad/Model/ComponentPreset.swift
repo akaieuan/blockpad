@@ -55,7 +55,7 @@ struct ComponentPreset: Identifiable {
                 ? Palette.fillPresets[min(Palette.fillPresets.count - 1, part.fill - 1)].hex
                 : nil
             return Block(kind: part.kind,
-                         rect: part.rect.offsetBy(dx: origin.x, dy: origin.y),
+                         rect: part.rect.translated(dx: origin.x, dy: origin.y),
                          text: part.text,
                          stroke: strokeHex,
                          fill: fillHex,

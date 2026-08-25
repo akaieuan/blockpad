@@ -11,6 +11,17 @@ struct SendIsland: View {
 
     private var mode: PayloadMode { PayloadMode(rawValue: payloadModeRaw) ?? .tree }
 
+    /// What each mode would cost for the drawing currently on the canvas.
+    /// Computed when the menu opens, which is rare enough that rendering the
+    /// tree here is cheap.
+    private func measurement(_ option: PayloadMode) -> String {
+        guard !store.blocks.isEmpty else { return "empty" }
+        let bounds = SketchExport.contentBounds(store.blocks)
+        return option.measurement(tree: SketchExport.tree(store.blocks),
+                                  imageSize: CGSize(width: bounds.width * 2,
+                                                    height: bounds.height * 2))
+    }
+
     var body: some View {
         HStack(spacing: 2) {
             Button(action: onSend) {
@@ -40,10 +51,14 @@ struct SendIsland: View {
                         Button {
                             payloadModeRaw = option.rawValue
                         } label: {
+                            // Sized against the scene actually on the canvas
+                            // rather than a constant that was only ever right
+                            // for one drawing.
+                            let title = "\(option.label) · \(measurement(option)) · \(option.detail)"
                             if mode == option {
-                                Label("\(option.label) · \(option.detail)", systemImage: "checkmark")
+                                Label(title, systemImage: "checkmark")
                             } else {
-                                Text("\(option.label) · \(option.detail)")
+                                Text(title)
                             }
                         }
                     }

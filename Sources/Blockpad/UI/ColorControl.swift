@@ -292,6 +292,10 @@ struct NumberControl: View {
     let value: Double
     let range: ClosedRange<Double>
     let step: Double
+    /// Angles have no ends — scrubbing past 360 should come back round rather
+    /// than stick.
+    var wraps: Bool = false
+    var unit: String = ""
     var presets: [Double] = []
     let onChange: (Double) -> Void
 
@@ -300,8 +304,8 @@ struct NumberControl: View {
 
     var body: some View {
         HStack(spacing: 1) {
-            stepButton("minus", enabled: value > range.lowerBound) {
-                onChange(clamp(value - step))
+            stepButton("minus", enabled: wraps || value > range.lowerBound) {
+                onChange(bound(value - step))
             }
 
             // Drag horizontally to scrub, the way every design tool does it.
@@ -316,20 +320,20 @@ struct NumberControl: View {
                         .onChanged { gesture in
                             if dragStart == nil { dragStart = value }
                             let delta = Double(gesture.translation.width) * step * 0.5
-                            onChange(clamp((dragStart ?? value) + delta))
+                            onChange(bound((dragStart ?? value) + delta))
                         }
                         .onEnded { _ in dragStart = nil }
                 )
                 .help("Drag to scrub")
 
-            stepButton("plus", enabled: value < range.upperBound) {
-                onChange(clamp(value + step))
+            stepButton("plus", enabled: wraps || value < range.upperBound) {
+                onChange(bound(value + step))
             }
 
             if !presets.isEmpty {
                 Menu {
                     ForEach(presets, id: \.self) { preset in
-                        Button(label(for: preset)) { onChange(clamp(preset)) }
+                        Button(label(for: preset)) { onChange(bound(preset)) }
                     }
                 } label: {
                     Image(systemName: "chevron.down")
@@ -353,7 +357,9 @@ struct NumberControl: View {
     }
 
     private var display: String {
-        value >= 999 ? "Full" : (value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value))
+        if value >= 999 { return "Full" }
+        let number = value == value.rounded() ? "\(Int(value))" : String(format: "%.1f", value)
+        return number + unit
     }
 
     private func label(for preset: Double) -> String {
@@ -362,6 +368,17 @@ struct NumberControl: View {
 
     private func clamp(_ next: Double) -> Double {
         min(max(next, range.lowerBound), range.upperBound)
+    }
+
+    /// Clamps, unless the value wraps — an angle has no ends, so scrubbing past
+    /// 360 should come back round rather than stick at the top.
+    private func bound(_ next: Double) -> Double {
+        guard wraps else { return clamp(next) }
+        let span = range.upperBound - range.lowerBound
+        guard span > 0 else { return next }
+        var wrapped = (next - range.lowerBound).truncatingRemainder(dividingBy: span)
+        if wrapped < 0 { wrapped += span }
+        return range.lowerBound + wrapped
     }
 
     private func stepButton(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
