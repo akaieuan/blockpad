@@ -192,6 +192,8 @@ you used last, with the rest on a flyout.
 |---|---|
 | `Cmd+Return` | copy payload |
 | `Cmd+Z` / `Shift+Cmd+Z` | undo / redo |
+| `Cmd+X` / `Cmd+C` / `Cmd+V` | cut · copy · paste, on the canvas |
+| `Cmd+G` / `Shift+Cmd+G` | group · ungroup |
 | `Cmd+D` | duplicate · `Cmd+A` select all |
 | `Cmd+[` / `Cmd+]` | send backward / bring forward (`Shift` for all the way) |
 | `Cmd+0` / `Cmd+9` | zoom 100% / centre on the drawing |
@@ -199,6 +201,8 @@ you used last, with the rest on a flyout.
 | double-click | edit text, or start a text block on empty canvas |
 | space-drag, scroll | pan · `Ctrl`- or `Cmd`-scroll or pinch zooms |
 | drag with guides on | edges and centres snap to nearby blocks |
+| `Shift`-drag a connector | snaps its heading to 15° |
+| drag a connector's mid-handle | bows it off its chord |
 | viewfinder button | fits the drawing into the area the chrome is not covering |
 
 **Alignment guides** are worth calling out. Grid snapping gives tidy coordinates
@@ -207,6 +211,22 @@ out. Dragging solves the three interesting lines per axis against every other
 block, pulls to the nearest match, and draws a guide across the objects that
 share it. Multi-selection moves as a rigid body so its internal spacing cannot
 drift.
+
+### Connectors
+
+Arrows and lines point anywhere — the heading is free, `Shift` snaps it to 15°,
+and a round mid-handle bows the line into a curve with the arrowhead following
+the tangent. The inspector carries the same two as numbers you can scrub. Both
+reach the payload: a connector serializes as its length, its heading in degrees,
+and its bow, rather than as a bounding box that says nothing about which way it
+runs.
+
+### Grouping
+
+`Cmd+G` binds a selection together: clicking any member takes the whole group,
+and it moves as one. Grouping is a decision you made, so it is stored
+separately from the geometric nesting the tree infers, and it survives you
+dragging the pieces apart.
 
 ### Styling
 

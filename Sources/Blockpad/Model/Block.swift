@@ -117,6 +117,10 @@ struct Block: Identifiable, Codable, Equatable {
     /// How far a connector bows out of its chord, as a signed fraction of the
     /// chord's length. Zero is a straight line; the sign picks a side.
     var curve: Double = 0
+    /// Blocks sharing an id move and select as one. Separate from `parentID`,
+    /// which is geometric nesting the export infers — grouping is a decision
+    /// the person made, and it should survive them dragging things apart.
+    var groupID: UUID?
     /// Stable per-block seed so roughness never shimmers between redraws.
     var seed: UInt64 = UInt64.random(in: 1...UInt64.max)
     /// Freehand points, `.pen` only. Document coordinates.
@@ -127,7 +131,8 @@ struct Block: Identifiable, Codable, Equatable {
          text: String = "", stroke: String = Palette.defaultStroke, fill: String? = nil,
          fillStyle: FillStyle = .solid, strokeWidth: Double = 2,
          cornerRadius: Double = 10, opacity: Double = 1, fontSize: Double? = nil,
-         curve: Double = 0, seed: UInt64 = UInt64.random(in: 1...UInt64.max),
+         curve: Double = 0, groupID: UUID? = nil,
+         seed: UInt64 = UInt64.random(in: 1...UInt64.max),
          points: [CGPoint] = [], z: Int = 0) {
         self.id = id
         self.kind = kind
@@ -142,6 +147,7 @@ struct Block: Identifiable, Codable, Equatable {
         self.opacity = opacity
         self.fontSize = fontSize
         self.curve = curve
+        self.groupID = groupID
         self.seed = seed
         self.points = points
         self.z = z
@@ -152,7 +158,7 @@ struct Block: Identifiable, Codable, Equatable {
     /// Includes the retired palette keys so old scenes can still be read.
     private enum CodingKeys: String, CodingKey {
         case id, kind, parentID, rect, text, stroke, fill, fillStyle
-        case strokeWidth, cornerRadius, opacity, fontSize, curve, seed, points, z
+        case strokeWidth, cornerRadius, opacity, fontSize, curve, groupID, seed, points, z
         case colorIndex, fillIndex, strokeIndex, corner
     }
 
@@ -203,6 +209,7 @@ struct Block: Identifiable, Codable, Equatable {
         }
         fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize)
         curve = try c.decodeIfPresent(Double.self, forKey: .curve) ?? 0
+        groupID = try c.decodeIfPresent(UUID.self, forKey: .groupID)
         seed = try c.decodeIfPresent(UInt64.self, forKey: .seed) ?? UInt64.random(in: 1...UInt64.max)
         points = try c.decodeIfPresent([CGPoint].self, forKey: .points) ?? []
         z = try c.decodeIfPresent(Int.self, forKey: .z) ?? 0
@@ -223,6 +230,7 @@ struct Block: Identifiable, Codable, Equatable {
         try c.encode(opacity, forKey: .opacity)
         try c.encodeIfPresent(fontSize, forKey: .fontSize)
         try c.encode(curve, forKey: .curve)
+        try c.encodeIfPresent(groupID, forKey: .groupID)
         try c.encode(seed, forKey: .seed)
         try c.encode(points, forKey: .points)
         try c.encode(z, forKey: .z)

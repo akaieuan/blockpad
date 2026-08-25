@@ -308,11 +308,14 @@ final class CanvasView: NSView {
         }
 
         if let hit = blockHit(at: docPoint) {
+            // Clicking one member of a group takes the whole group — that is
+            // what makes grouping mean anything rather than just a label.
+            let mates = groupMates(of: hit)
             if event.modifierFlags.contains(.shift) {
-                if store.selection.contains(hit.id) { store.selection.remove(hit.id) }
-                else { store.selection.insert(hit.id) }
+                if store.selection.contains(hit.id) { store.selection.subtract(mates) }
+                else { store.selection.formUnion(mates) }
             } else if !store.selection.contains(hit.id) {
-                store.selection = [hit.id]
+                store.selection = mates
             }
             drag = .moving(origin: docPoint, snapshot: store.blocks)
         } else {
@@ -462,7 +465,8 @@ final class CanvasView: NSView {
                            width: abs(viewPoint.x - start.x), height: abs(viewPoint.y - start.y))
             let docRect = CGRect(origin: toDoc(r.origin),
                                  size: CGSize(width: r.width / store.zoom, height: r.height / store.zoom))
-            store.selection = Set(store.blocks.filter { docRect.intersects($0.bounds) }.map(\.id))
+            let caught = store.blocks.filter { docRect.intersects($0.bounds) }
+            store.selection = caught.reduce(into: Set<UUID>()) { $0.formUnion(groupMates(of: $1)) }
 
         case .erasing:
             eraseHit(at: docPoint)
@@ -676,7 +680,12 @@ final class CanvasView: NSView {
         case "z": commitEditor(); if shift { undoManager?.redo() } else { undoManager?.undo() }; return true
         case "a": store.selection = Set(store.blocks.map(\.id)); return true
         case "d": duplicateSelection(); return true
-        case "c": onSend?(); return true
+        // Cmd+C is the canvas copy people expect. Copying the *payload* stays on
+        // Cmd+Return, which is the shortcut the Copy button advertises.
+        case "c": copySelection(); return true
+        case "x": cutSelection(); return true
+        case "v": pasteBlocks(); return true
+        case "g": if shift { ungroupSelection() } else { groupSelection() }; return true
         case "0": setZoom(1); return true
         case "9": zoomToFit(); return true
         case "]": reorder(toFront: shift, forward: true); return true
@@ -726,11 +735,17 @@ final class CanvasView: NSView {
         guard !store.selection.isEmpty else { return }
         var blocks = store.blocks
         var newSelection = Set<UUID>()
+        // A duplicated group stays a group, but its own — not the original's.
+        var duplicatedGroups: [UUID: UUID] = [:]
         for block in store.blocks where store.selection.contains(block.id) {
             var copy = block
             copy.id = UUID()
             copy.seed = UInt64.random(in: 1...UInt64.max)
             copy.rect = copy.rect.translated(dx: gridStep * 2, dy: gridStep * 2)
+            if let group = copy.groupID {
+                if duplicatedGroups[group] == nil { duplicatedGroups[group] = UUID() }
+                copy.groupID = duplicatedGroups[group]
+            }
             copy.points = copy.points.map { CGPoint(x: $0.x + gridStep * 2, y: $0.y + gridStep * 2) }
             copy.z = (blocks.map(\.z).max() ?? 0) + 1
             blocks.append(copy)
@@ -791,6 +806,94 @@ final class CanvasView: NSView {
         let after = store.blocks
         store.blocks = snapshot
         apply(after, name: name)
+    }
+
+    // MARK: - Clipboard
+
+    /// Blocks travel as JSON on a private pasteboard type, so a copy survives a
+    /// relaunch and can cross between two Blockpad instances.
+    private static let blockPasteboardType = NSPasteboard.PasteboardType("studio.ubik.blockpad.blocks")
+
+    func copySelection() {
+        let picked = store.selectedBlocks
+        guard !picked.isEmpty, let data = try? JSONEncoder().encode(picked) else { return }
+        let pasteboard = NSPasteboard(name: .general)
+        pasteboard.clearContents()
+        pasteboard.setData(data, forType: Self.blockPasteboardType)
+        store.flash(picked.count == 1 ? "Copied" : "Copied \(picked.count)")
+    }
+
+    func cutSelection() {
+        guard !store.selection.isEmpty else { return }
+        copySelection()
+        deleteSelection()
+    }
+
+    func pasteBlocks() {
+        guard let data = NSPasteboard(name: .general).data(forType: Self.blockPasteboardType),
+              let incoming = try? JSONDecoder().decode([Block].self, from: data),
+              !incoming.isEmpty else { return }
+
+        // Fresh identity for everything, or a paste would collide with the
+        // blocks it came from. Parent and group links are remapped rather than
+        // dropped, so a pasted group stays a group and stays its own.
+        var identities: [UUID: UUID] = [:]
+        var groups: [UUID: UUID] = [:]
+        for block in incoming { identities[block.id] = UUID() }
+
+        let offset = gridStep * 2
+        var pasted: [Block] = []
+        var z = store.nextZ
+        for var block in incoming {
+            block.id = identities[block.id] ?? UUID()
+            if let parent = block.parentID { block.parentID = identities[parent] }
+            if let group = block.groupID {
+                if groups[group] == nil { groups[group] = UUID() }
+                block.groupID = groups[group]
+            }
+            block.rect = block.rect.translated(dx: offset, dy: offset)
+            block.points = block.points.map { CGPoint(x: $0.x + offset, y: $0.y + offset) }
+            block.z = z
+            z += 1
+            pasted.append(block)
+        }
+
+        apply(store.blocks + pasted, name: "Paste")
+        store.selection = Set(pasted.map(\.id))
+        needsDisplay = true
+    }
+
+    // MARK: - Grouping
+
+    func groupSelection() {
+        let picked = store.selectedBlocks
+        guard picked.count > 1 else { return }
+        let id = UUID()
+        var blocks = store.blocks
+        for i in blocks.indices where store.selection.contains(blocks[i].id) {
+            blocks[i].groupID = id
+        }
+        apply(blocks, name: "Group")
+        store.flash("Grouped \(picked.count)")
+        needsDisplay = true
+    }
+
+    func ungroupSelection() {
+        let ids = Set(store.selectedBlocks.compactMap(\.groupID))
+        guard !ids.isEmpty else { return }
+        var blocks = store.blocks
+        for i in blocks.indices where blocks[i].groupID.map(ids.contains) == true {
+            blocks[i].groupID = nil
+        }
+        apply(blocks, name: "Ungroup")
+        store.flash("Ungrouped")
+        needsDisplay = true
+    }
+
+    /// Every block that must come along when `block` is selected or dragged.
+    private func groupMates(of block: Block) -> Set<UUID> {
+        guard let group = block.groupID else { return [block.id] }
+        return Set(store.blocks.filter { $0.groupID == group }.map(\.id))
     }
 
     func undo() { commitEditor(); undoManager?.undo() }
