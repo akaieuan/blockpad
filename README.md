@@ -45,6 +45,13 @@ for one specific moment, and the constraint is the product.
 <sub>It opens over whatever you are already in. The session behind is blurred; the sketch is not.</sub>
 </div>
 
+<div align="center">
+<img src="docs/drawing-the-logo.png" width="820" alt="Blockpad open over an agent session, with this project's own logo being sketched on the canvas">
+<br>
+<sub>Blockpad's own mark, blocked out in Blockpad. Redacted regions are the
+host session's repo and prompt, not part of the app.</sub>
+</div>
+
 Two things follow, and they are the point:
 
 **It reduces the cost of being understood.** The sketch becomes an exact scene
