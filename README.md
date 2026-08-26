@@ -359,12 +359,17 @@ The design departed from the original plan three times, deliberately:
   colour picker as a non-goal. Both reversed. The payload got better for it: hex
   is actionable where a palette name was not.
 
-**Next is M1: delivery.** Today Blockpad copies and you paste. M1 captures the
-frontmost app before the panel takes focus and pastes into it directly — text
-everywhere, images into editors, and a written-to-disk path for terminals, which
-is what makes CLI agents work at all. The plan is in
-[docs/superpowers/plans](docs/superpowers/plans/2026-08-21-m1-delivery.md); the
-pure-logic half is built and tested, the paste itself is not yet wired.
+**Auto-paste is built, and off.** Blockpad can capture the app that was
+frontmost before the panel opened and paste into it directly — text anywhere,
+images into editors, and a written-to-disk path for terminals, which is what
+makes CLI agents work at all. It is behind **Canvas → Send → "Paste into the app
+I came from"**, unchecked by default.
+
+Off by default on purpose: copy-and-paste already works, and auto-paste costs an
+Accessibility permission the first time it runs. A button that already did what
+you wanted has no business asking for a system permission, so the prompt only
+appears once you have turned it on. The plan is in
+[docs/superpowers/plans](docs/superpowers/plans/2026-08-21-m1-delivery.md).
 
 See [PLAN.md](PLAN.md) for the full design, the open questions, and the
 reasoning behind each decision.

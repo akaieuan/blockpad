@@ -20,6 +20,13 @@ private struct Layout {
 struct RootView: View {
     @ObservedObject var store: SketchStore
     @AppStorage("payloadMode") private var payloadModeRaw: String = PayloadMode.tree.rawValue
+    /// Off by default, and deliberately.
+    ///
+    /// Copy-and-paste already works, and auto-paste costs an Accessibility
+    /// permission prompt the first time it runs. Nobody should be asked for a
+    /// system permission by a button that already did what they wanted — so the
+    /// prompt only ever appears after someone has turned this on.
+    @AppStorage("autoPaste") private var autoPaste: Bool = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -143,6 +150,16 @@ struct RootView: View {
         }
 
         let mode = PayloadMode(rawValue: payloadModeRaw) ?? .tree
+
+        guard autoPaste else {
+            // The original path, unchanged: clipboard and a toast, no
+            // permission, no activation, nothing to grant.
+            store.flash(SketchExport.copyToPasteboard(store.blocks, mode: mode,
+                                                      options: store.renderOptions,
+                                                      template: store.template))
+            return
+        }
+
         // Captured when the panel opened, before it took key focus away from
         // whatever you were in. Reading it now would only ever find Blockpad.
         let target = PanelController.shared?.pendingTarget

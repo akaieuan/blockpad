@@ -18,6 +18,9 @@ struct ToolDock: View {
 
     /// Remembers which member of each group was last used, so the collapsed
     /// button is never a surprise.
+    /// Auto-paste needs an Accessibility grant, so it stays opt-in and lives
+    /// here rather than as a permanent row someone can trip over.
+    @AppStorage("autoPaste") private var autoPaste: Bool = false
     @State private var lastShape: String = "box"
     @State private var lastConnector: String = "arrow"
 
@@ -123,6 +126,18 @@ struct ToolDock: View {
                     }
                 }
                 Button("None") { store.frameSize = nil }
+            }
+            Divider()
+            Section("Send") {
+                Button {
+                    autoPaste.toggle()
+                } label: {
+                    if autoPaste {
+                        Label("Paste into the app I came from", systemImage: "checkmark")
+                    } else {
+                        Text("Paste into the app I came from")
+                    }
+                }
             }
             Divider()
             Button("Zoom to Fit") { CanvasHost.shared?.zoomToFit() }
