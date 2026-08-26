@@ -304,9 +304,15 @@ receiving agent can act on.
 ## Building
 
 ```bash
-./Scripts/bundle.sh release
-open build/Blockpad.app
+./Scripts/install.sh          # build, install to ~/Applications, register once
+open -a Blockpad
 ```
+
+`Scripts/bundle.sh` alone just assembles `build/Blockpad.app`. Prefer the
+installer: two bundles sharing one identifier means macOS can resolve the
+hotkey, `open -a`, and the menu bar item to either of them, and which one you
+get is not up to you. The installer replaces the installed copy, unregisters the
+build one, and tells you how many copies LaunchServices can still see.
 
 Requires Swift 6 and macOS 14+. Dependencies are `KeyboardShortcuts` and
 nothing else yet.

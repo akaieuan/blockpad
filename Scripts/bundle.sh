@@ -13,6 +13,9 @@ BIN="$(swift build -c "$CONFIG" --show-bin-path)"
 APP="$ROOT/build/Blockpad.app"
 
 rm -rf "$APP"
+# Sweep any "Blockpad 2.app" siblings. macOS's conflict-rename can leave these
+# behind, and each one registers itself as another copy of the same app.
+find "$ROOT/build" -maxdepth 1 -name "Blockpad *.app" -type d -exec rm -rf {} + 2>/dev/null || true
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN/Blockpad" "$APP/Contents/MacOS/Blockpad"
