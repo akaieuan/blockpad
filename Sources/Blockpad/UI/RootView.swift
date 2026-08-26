@@ -1,4 +1,5 @@
 import SwiftUI
+import BlockpadKit
 
 /// Layout breakpoints. The window is a floating utility that gets dragged small
 /// constantly, so the chrome has to survive widths a normal app never sees.
@@ -130,11 +131,50 @@ struct RootView: View {
         .padding(.top, 54)
     }
 
+    /// Puts the sketch into whatever you came from (§6).
+    ///
+    /// The payload always reaches the clipboard first, whatever happens next —
+    /// every failure path below still leaves something you can paste by hand,
+    /// which is what the toast promises.
     private func send() {
+        guard !store.blocks.isEmpty else {
+            store.flash("Nothing to copy")
+            return
+        }
+
         let mode = PayloadMode(rawValue: payloadModeRaw) ?? .tree
-        store.flash(SketchExport.copyToPasteboard(store.blocks, mode: mode,
-                                                  options: store.renderOptions,
-                                                  template: store.template))
+        // Captured when the panel opened, before it took key focus away from
+        // whatever you were in. Reading it now would only ever find Blockpad.
+        let target = PanelController.shared?.pendingTarget
+        let strategy = AppAdapters().resolve(shape: mode.shape,
+                                             bundleID: target?.bundleIdentifier)
+
+        let tree = SketchExport.tree(store.blocks, template: store.template)
+        var image: Data?
+        var pathLine: String?
+
+        if mode.shape.wantsImage {
+            image = SketchExport.renderPNGData(store.blocks, options: store.renderOptions)
+            // Terminals cannot take a pasted picture, so it goes to disk and the
+            // path travels as text instead.
+            if strategy == .pastePath, let png = image {
+                pathLine = SketchFileWriter.write(png, forTargetPID: target?.processIdentifier)?.pasteText
+            }
+        }
+
+        let payload = DeliveryPayload(text: mode.shape.wantsText ? tree : "",
+                                      image: image,
+                                      pathLine: pathLine)
+
+        Deliverer.shared.deliver(payload: payload, to: target, strategy: strategy) { outcome in
+            store.flash(outcome.message)
+            // The panel is hidden by the time a post-activation failure is
+            // known, so bring it back — otherwise the toast explaining what
+            // went wrong is raised onto a window nobody can see.
+            if !outcome.succeeded, outcome.panelWasHidden {
+                PanelController.shared?.show()
+            }
+        }
     }
 }
 

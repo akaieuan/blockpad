@@ -51,3 +51,43 @@ public struct AppAdapters: Sendable {
         learned.removeValue(forKey: bundleID)
     }
 }
+
+/// What the user asked to send, independent of what the target can take.
+public enum PayloadShape: Sendable {
+    case textOnly
+    case imageOnly
+    case textAndImage
+
+    public var wantsImage: Bool { self != .textOnly }
+    public var wantsText: Bool { self != .imageOnly }
+}
+
+extension AppAdapters {
+
+    /// Reconciles what the user asked to send with what the target can receive.
+    ///
+    /// Two rules do the work. Text is safe to paste into anything, known app or
+    /// not — it is exactly what Cmd+V would have done. An image is not: pasting
+    /// one into an app that cannot take it produces either nothing or a blob of
+    /// base64, so an unknown app carrying an image request degrades to the
+    /// clipboard rather than guessing.
+    public func resolve(shape: PayloadShape, bundleID: String?) -> DeliveryStrategy {
+        let known = strategy(forBundleID: bundleID)
+
+        guard shape.wantsImage else {
+            // A known app that only takes text, an unknown app, or an image app
+            // being sent text — all the same answer.
+            return known == .manual ? .manual : .pasteText
+        }
+
+        switch known {
+        case .some(let strategy) where strategy.carriesImage:
+            return strategy
+        case .some(.pasteText):
+            // Known, but it cannot take a picture. Send what it can read.
+            return .pasteText
+        default:
+            return .manual
+        }
+    }
+}

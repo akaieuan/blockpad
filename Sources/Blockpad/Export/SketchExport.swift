@@ -8,6 +8,15 @@ enum PayloadMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// What this mode asks to send, independent of what any target can take.
+    var shape: PayloadShape {
+        switch self {
+        case .tree: return .textOnly
+        case .treeAndImage: return .textAndImage
+        case .image: return .imageOnly
+        }
+    }
+
     var label: String {
         switch self {
         case .tree: return "Tree only"

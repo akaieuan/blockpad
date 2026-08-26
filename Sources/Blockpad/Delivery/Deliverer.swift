@@ -15,6 +15,21 @@ struct DeliveryPayload {
 @MainActor
 final class Deliverer {
 
+    /// One instance for the app's lifetime: it owns an activation observer that
+    /// has to outlive the call that started it.
+    static let shared = Deliverer()
+
+    /// What happened, and what to say about it. The panel is hidden before the
+    /// paste, so a toast raised afterwards would be invisible — the caller uses
+    /// this to bring the panel back when something went wrong after the hide.
+    struct Outcome {
+        let succeeded: Bool
+        let message: String
+        /// True once the panel has been hidden, so the caller knows the toast
+        /// needs the window back to be seen at all.
+        let panelWasHidden: Bool
+    }
+
     private let virtualKeyV: CGKeyCode = 0x09
     /// A ceiling that stops a wedged app hanging the send, not a timing
     /// assumption — the notification is what actually gates the paste.
@@ -29,30 +44,32 @@ final class Deliverer {
     func deliver(payload: DeliveryPayload,
                  to target: NSRunningApplication?,
                  strategy: DeliveryStrategy,
-                 completion: @escaping (String) -> Void) {
+                 completion: @escaping (Outcome) -> Void) {
 
+        // Written first and unconditionally. Every failure below still leaves a
+        // usable payload on the clipboard, which is the promise the toast makes.
         writePasteboard(payload, strategy: strategy)
 
+        func bail(_ message: String) {
+            completion(Outcome(succeeded: false, message: message, panelWasHidden: false))
+        }
+
         guard strategy != .manual else {
-            completion("Copied — paste it yourself")
-            return
+            return bail("Copied — paste it yourself")
         }
 
         guard let target, !target.isTerminated else {
-            completion("Copied — no app to paste into")
-            return
+            return bail("Copied — no app to paste into")
         }
 
         guard AccessibilityGate.requestIfNeeded() else {
-            completion("Copied — grant Accessibility to auto-paste")
-            return
+            return bail("Copied — grant Accessibility to auto-paste")
         }
 
         // Synthetic keystrokes are dropped silently while secure input is on,
         // so say so rather than claiming a paste that never happened.
         guard !AccessibilityGate.isSecureInputActive else {
-            completion("Copied — secure input is blocking auto-paste")
-            return
+            return bail("Copied — secure input is blocking auto-paste")
         }
 
         PanelController.shared?.hideForDelivery()
@@ -60,11 +77,15 @@ final class Deliverer {
         awaitActivation(of: target) { [weak self] activated in
             guard let self else { return }
             guard activated else {
-                completion("Copied — target did not come forward")
+                completion(Outcome(succeeded: false,
+                                   message: "Copied — \(target.localizedName ?? "the app") did not come forward",
+                                   panelWasHidden: true))
                 return
             }
             self.postPaste()
-            completion(self.successMessage(for: strategy, payload: payload))
+            completion(Outcome(succeeded: true,
+                               message: self.successMessage(for: strategy, payload: payload),
+                               panelWasHidden: true))
         }
 
         target.activate()

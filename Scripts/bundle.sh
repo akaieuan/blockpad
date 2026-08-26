@@ -22,9 +22,28 @@ cp "$BIN/Blockpad" "$APP/Contents/MacOS/Blockpad"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 cp "$ROOT/Resources/Blockpad.icns" "$APP/Contents/Resources/Blockpad.icns"
 
-# Ad-hoc signature is enough to run locally. Note it changes on every rebuild,
-# so once M1 needs Accessibility the permission will reset each build until the
-# app is signed with a stable identity.
-codesign --force --sign - "$APP" >/dev/null 2>&1 || true
+# Ad-hoc signature is enough to run locally, but the identifier has to be set
+# explicitly: codesign otherwise names the signature after the binary
+# ("Blockpad") while the bundle declares studio.ubik.blockpad, and TCC keys
+# Accessibility on the signing identity.
+#
+# The ad-hoc hash still changes on every rebuild, so the Accessibility grant
+# resets each time until this is signed with a stable identity. Scripts/sign.sh
+# sets one up.
+#
+# Extended attributes have to go first, or codesign refuses the bundle as
+# carrying "resource fork, Finder information, or similar detritus". That
+# failure used to be swallowed by redirecting to /dev/null, so the identifier
+# silently stayed wrong while the script claimed success.
+#
+# com.apple.provenance survives this on macOS 14+ — the system re-adds it and it
+# cannot be stripped. It makes `codesign --verify --strict` complain and affects
+# nothing else, so plain --verify is what to check.
+xattr -cr "$APP" 2>/dev/null || true
+
+if ! codesign --force --identifier studio.ubik.blockpad --sign "${BLOCKPAD_SIGNING_IDENTITY:--}" "$APP" 2>/tmp/blockpad-codesign.log; then
+    echo "warning: codesign failed —"
+    sed 's/^/  /' /tmp/blockpad-codesign.log
+fi
 
 echo "built $APP"
