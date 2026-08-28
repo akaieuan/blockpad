@@ -11,11 +11,48 @@ import CoreGraphics
 struct RenderOptions {
     var theme: CanvasTheme = .paper
     var sketchy: Bool = false
+    /// Variables in scope, and which mode is showing. Carried in the render
+    /// options so every path that draws a block — canvas, PNG export, icon
+    /// preview — resolves identically.
+    var collections: [VariableCollection] = []
+    var mode: String = "Default"
 }
 
 enum BlockRenderer {
 
     static let cornerRadius: CGFloat = 10
+
+    /// A block with its bound properties replaced by the values they resolve to.
+    ///
+    /// Resolving once, up front, means nothing downstream has to know variables
+    /// exist — the shape drawing, the text drawing and the export all keep
+    /// reading plain literals off the block. A binding that no longer resolves
+    /// leaves the block's own literal alone, so deleting a variable never blanks
+    /// the work that referenced it.
+    static func resolved(_ block: Block, options: RenderOptions) -> Block {
+        guard let bindings = block.bindings, !bindings.isEmpty,
+              !options.collections.isEmpty else { return block }
+
+        var copy = block
+        for binding in bindings {
+            guard let value = VariableResolver.resolve(binding,
+                                                       in: options.collections,
+                                                       mode: options.mode) else { continue }
+            switch binding.property {
+            case .fill:
+                if let hex = value.colourHex { copy.fill = hex }
+            case .stroke:
+                if let hex = value.colourHex { copy.stroke = hex }
+            case .cornerRadius:
+                if let number = value.doubleValue { copy.cornerRadius = number }
+            case .strokeWidth:
+                if let number = value.doubleValue { copy.strokeWidth = number }
+            case .fontSize:
+                if let number = value.doubleValue { copy.fontSize = number }
+            }
+        }
+        return copy
+    }
 
     /// SF Pro, not rounded: rounded reads friendly-informal, which fights the
     /// crisp direction.
@@ -83,7 +120,9 @@ enum BlockRenderer {
 
     // MARK: - Blocks
 
-    static func draw(_ block: Block, in ctx: CGContext, zoom: CGFloat, options: RenderOptions) {
+    static func draw(_ incoming: Block, in ctx: CGContext, zoom: CGFloat, options: RenderOptions) {
+        // Bindings become literals here and nowhere else.
+        let block = resolved(incoming, options: options)
         ctx.saveGState()
         if block.opacity < 1 {
             ctx.setAlpha(CGFloat(block.opacity))

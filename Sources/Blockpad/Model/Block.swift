@@ -120,6 +120,11 @@ struct Block: Identifiable, Codable, Equatable {
     /// Tilt onto a plane. nil is flat, which is what every block drawn before
     /// planes existed decodes to.
     var transform: Transform2D?
+    /// Properties pointing at variables. A pointer, never a resolved copy —
+    /// otherwise renaming or recolouring a variable would change nothing on the
+    /// canvas. The block keeps its own literal alongside, which is what shows if
+    /// the variable is ever deleted.
+    var bindings: [VariableBinding]?
     /// Blocks sharing an id move and select as one. Separate from `parentID`,
     /// which is geometric nesting the export infers — grouping is a decision
     /// the person made, and it should survive them dragging things apart.
@@ -134,7 +139,8 @@ struct Block: Identifiable, Codable, Equatable {
          text: String = "", stroke: String = Palette.defaultStroke, fill: String? = nil,
          fillStyle: FillStyle = .solid, strokeWidth: Double = 2,
          cornerRadius: Double = 10, opacity: Double = 1, fontSize: Double? = nil,
-         curve: Double = 0, transform: Transform2D? = nil, groupID: UUID? = nil,
+         curve: Double = 0, transform: Transform2D? = nil,
+         bindings: [VariableBinding]? = nil, groupID: UUID? = nil,
          seed: UInt64 = UInt64.random(in: 1...UInt64.max),
          points: [CGPoint] = [], z: Int = 0) {
         self.id = id
@@ -151,6 +157,7 @@ struct Block: Identifiable, Codable, Equatable {
         self.fontSize = fontSize
         self.curve = curve
         self.transform = transform
+        self.bindings = bindings
         self.groupID = groupID
         self.seed = seed
         self.points = points
@@ -162,7 +169,8 @@ struct Block: Identifiable, Codable, Equatable {
     /// Includes the retired palette keys so old scenes can still be read.
     private enum CodingKeys: String, CodingKey {
         case id, kind, parentID, rect, text, stroke, fill, fillStyle
-        case strokeWidth, cornerRadius, opacity, fontSize, curve, transform, groupID, seed, points, z
+        case strokeWidth, cornerRadius, opacity, fontSize, curve, transform
+        case bindings, groupID, seed, points, z
         case colorIndex, fillIndex, strokeIndex, corner
     }
 
@@ -214,6 +222,7 @@ struct Block: Identifiable, Codable, Equatable {
         fontSize = try c.decodeIfPresent(Double.self, forKey: .fontSize)
         curve = try c.decodeIfPresent(Double.self, forKey: .curve) ?? 0
         transform = try c.decodeIfPresent(Transform2D.self, forKey: .transform)
+        bindings = try c.decodeIfPresent([VariableBinding].self, forKey: .bindings)
         groupID = try c.decodeIfPresent(UUID.self, forKey: .groupID)
         seed = try c.decodeIfPresent(UInt64.self, forKey: .seed) ?? UInt64.random(in: 1...UInt64.max)
         points = try c.decodeIfPresent([CGPoint].self, forKey: .points) ?? []
@@ -238,6 +247,9 @@ struct Block: Identifiable, Codable, Equatable {
         // Only written once it is actually a tilt, so a flat scene's file does
         // not grow a field of zeroes on every block.
         try c.encodeIfPresent(transform?.isIdentity == true ? nil : transform, forKey: .transform)
+        // Only written when there is one, so an unbound scene's file does not
+        // grow an empty array on every block.
+        try c.encodeIfPresent(bindings?.isEmpty == true ? nil : bindings, forKey: .bindings)
         try c.encodeIfPresent(groupID, forKey: .groupID)
         try c.encode(seed, forKey: .seed)
         try c.encode(points, forKey: .points)
@@ -268,6 +280,23 @@ struct Block: Identifiable, Codable, Equatable {
         let nx = -dy / length, ny = dx / length
         let offset = CGFloat(curve) * length * 2
         return CGPoint(x: mid.x + nx * offset, y: mid.y + ny * offset)
+    }
+
+    func binding(for property: BoundProperty) -> VariableBinding? {
+        bindings?.first { $0.property == property }
+    }
+
+    mutating func bind(_ property: BoundProperty, to variableID: UUID) {
+        var current = bindings ?? []
+        current.removeAll { $0.property == property }
+        current.append(VariableBinding(property: property, variableID: variableID))
+        bindings = current
+    }
+
+    mutating func unbind(_ property: BoundProperty) {
+        guard var current = bindings else { return }
+        current.removeAll { $0.property == property }
+        bindings = current.isEmpty ? nil : current
     }
 
     /// The tilt actually in force. Reading this rather than `transform`

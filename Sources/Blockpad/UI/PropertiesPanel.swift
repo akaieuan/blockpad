@@ -84,6 +84,69 @@ struct PropertiesPanel: View {
         return store.tool.kind?.takesFill ?? false
     }
 
+    // MARK: - Variables
+
+    /// The binding in force for a property, read off the first selected block —
+    /// the same block `effectiveStyle` reads its colours from, so the rail never
+    /// shows one block's value beside another's token.
+    private func binding(for property: BoundProperty) -> VariableBinding? {
+        store.selectedBlocks.first?.binding(for: property)
+    }
+
+    private func token(for property: BoundProperty) -> String? {
+        guard let binding = binding(for: property) else { return nil }
+        return VariableResolver.token(binding, in: store.collections)
+    }
+
+    /// Whether a property means anything for a block. Binding a mixed selection
+    /// must not put a font size on an arrow, and the rule has to match the one
+    /// the rows themselves use to decide what to show.
+    private static func accepts(_ property: BoundProperty, _ block: Block) -> Bool {
+        switch property {
+        case .stroke, .strokeWidth: return true
+        case .fill, .cornerRadius: return block.kind.takesFill
+        case .fontSize: return block.kind.takesText
+        }
+    }
+
+    /// Only offered for a selection. There is nowhere to record a binding on a
+    /// block that has not been drawn yet, and pretending otherwise would lose
+    /// the token the moment the shape appeared.
+    private func bindModel(_ property: BoundProperty, glyph: String,
+                           value: VariableValue?) -> BindGlyph.Model? {
+        guard hasSelection else { return nil }
+        return BindGlyph.Model(
+            symbol: glyph,
+            property: property,
+            boundTo: binding(for: property)?.variableID,
+            candidates: store.candidates(for: property),
+            mode: store.mode,
+            value: value,
+            suggestedName: store.suggestedName(for: property),
+            onBind: { id in
+                canvas()?.applyStyle({ block in
+                    guard Self.accepts(property, block) else { return }
+                    if let id { block.bind(property, to: id) } else { block.unbind(property) }
+                }, name: id == nil ? "Unbind" : "Bind")
+            },
+            onCreate: { name, seed in store.createVariable(named: name, value: seed) })
+    }
+
+    /// Paper is not a block, so its binding lives on the store rather than in a
+    /// `bindings` array — but it goes through the same affordance, because from
+    /// the outside it is the same act.
+    private var paperBind: BindGlyph.Model {
+        BindGlyph.Model(symbol: "square.grid.3x3",
+                        property: .fill,
+                        boundTo: store.paperVariableID,
+                        candidates: store.candidates(for: .fill),
+                        mode: store.mode,
+                        value: .colour(store.theme.hex),
+                        suggestedName: "paper",
+                        onBind: { store.paperVariableID = $0 },
+                        onCreate: { name, seed in store.createVariable(named: name, value: seed) })
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -162,7 +225,10 @@ struct PropertiesPanel: View {
     private var shapeRowSpecs: [RowSpec] {
         var rows: [RowSpec] = []
 
-        rows.append(RowSpec(id: "stroke", glyph: "scribble", label: "Stroke") {
+        rows.append(RowSpec(id: "stroke", glyph: "scribble", label: "Stroke",
+                            value: token(for: .stroke),
+                            bind: bindModel(.stroke, glyph: "scribble",
+                                            value: .colour(style.stroke))) {
             AnyView(ColorControl(current: style.stroke,
                                  presets: Palette.strokePresets,
                                  recents: store.recentColors,
@@ -174,7 +240,10 @@ struct PropertiesPanel: View {
             })
         })
 
-        rows.append(RowSpec(id: "weight", glyph: "lineweight", label: "Weight") {
+        rows.append(RowSpec(id: "weight", glyph: "lineweight", label: "Weight",
+                            value: token(for: .strokeWidth),
+                            bind: bindModel(.strokeWidth, glyph: "lineweight",
+                                            value: .number(style.strokeWidth))) {
             AnyView(NumberControl(value: style.strokeWidth,
                                   range: StrokeWeight.range,
                                   step: 0.5,
@@ -185,7 +254,10 @@ struct PropertiesPanel: View {
         })
 
         if showsFill {
-            rows.append(RowSpec(id: "fill", glyph: "paintbrush", label: "Fill") {
+            rows.append(RowSpec(id: "fill", glyph: "paintbrush", label: "Fill",
+                                value: token(for: .fill),
+                                bind: bindModel(.fill, glyph: "paintbrush",
+                                                value: style.fill.map { .colour($0) })) {
                 AnyView(ColorControl(current: style.fill,
                                      presets: Palette.fillPresets,
                                      recents: store.recentColors,
@@ -216,7 +288,10 @@ struct PropertiesPanel: View {
                 })
             }
 
-            rows.append(RowSpec(id: "radius", glyph: "app.dashed", label: "Radius") {
+            rows.append(RowSpec(id: "radius", glyph: "app.dashed", label: "Radius",
+                                value: token(for: .cornerRadius),
+                                bind: bindModel(.cornerRadius, glyph: "app.dashed",
+                                                value: .number(style.cornerRadius))) {
                 AnyView(NumberControl(value: style.cornerRadius,
                                       range: 0...120,
                                       step: 1,
@@ -228,7 +303,10 @@ struct PropertiesPanel: View {
         }
 
         if showsTextSize {
-            rows.append(RowSpec(id: "textSize", glyph: "textformat.size", label: "Text") {
+            rows.append(RowSpec(id: "textSize", glyph: "textformat.size", label: "Text",
+                                value: token(for: .fontSize),
+                                bind: bindModel(.fontSize, glyph: "textformat.size",
+                                                value: .number(effectiveFontSize))) {
                 AnyView(NumberControl(value: effectiveFontSize,
                                       range: BlockRenderer.fontSizeRange,
                                       step: 1,
@@ -368,7 +446,9 @@ struct PropertiesPanel: View {
 
     private var canvasRowSpecs: [RowSpec] {
         var rows: [RowSpec] = [
-            RowSpec(id: "theme", glyph: "square.grid.3x3", label: "Paper") {
+            RowSpec(id: "theme", glyph: "square.grid.3x3", label: "Paper",
+                    value: store.variable(store.paperVariableID)?.token,
+                    bind: paperBind) {
                 AnyView(Swatches(colors: CanvasTheme.all.map { Color(nsColor: $0.color) },
                                  names: CanvasTheme.all.map(\.name),
                                  selected: CanvasTheme.all.firstIndex(of: store.theme) ?? 0) { index in
@@ -419,6 +499,19 @@ struct PropertiesPanel: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize())
             },
+            RowSpec(id: "variables", glyph: "curlybraces", label: "Variables",
+                    value: store.variables.isEmpty ? nil : "\(store.variables.count)") {
+                AnyView(Button {
+                    store.variablesOpen.toggle()
+                    // Two panels in the same corner is one too many.
+                    if store.variablesOpen { store.libraryOpen = false }
+                } label: {
+                    Text(store.variablesOpen ? "Hide" : (store.variables.isEmpty ? "Add" : "Edit"))
+                        .font(Token.Text.value)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(Token.accent))
+            },
             RowSpec(id: "guides", glyph: "ruler", label: "Guides") {
                 AnyView(Toggle("", isOn: $store.snapping)
                     .toggleStyle(.switch)
@@ -426,6 +519,30 @@ struct PropertiesPanel: View {
                     .labelsHidden())
             }
         ]
+
+        // A canvas with one mode has nothing to switch between, and a row that
+        // never changes is a row that should not be there.
+        if store.availableModes.count > 1 {
+            rows.insert(RowSpec(id: "mode", glyph: "circle.righthalf.filled", label: "Mode") {
+                AnyView(Menu {
+                    ForEach(store.availableModes, id: \.self) { name in
+                        Button {
+                            store.mode = name
+                        } label: {
+                            if store.mode == name {
+                                Label(name, systemImage: "checkmark")
+                            } else {
+                                Text(name)
+                            }
+                        }
+                    }
+                } label: {
+                    Text(store.mode).font(Token.Text.value)
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize())
+            }, at: 1)
+        }
 
         // Only shown when a template actually checks something, and only when
         // it has something to say. A permanent "0 issues" row is noise.
@@ -459,6 +576,9 @@ private struct RowSpec: Identifiable {
     let glyph: String
     let label: String
     var value: String? = nil
+    /// Set on rows whose property can carry a variable. The leading glyph
+    /// becomes the affordance rather than the row growing a control of its own.
+    var bind: BindGlyph.Model? = nil
     let content: () -> AnyView
 }
 
@@ -472,10 +592,14 @@ private struct Row: View {
 
     var body: some View {
         HStack(spacing: Token.Space.lg) {
-            Image(systemName: spec.glyph)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.primary.opacity(Token.Ink.tertiary))
-                .frame(width: 13)
+            if let bind = spec.bind {
+                BindGlyph(model: bind)
+            } else {
+                Image(systemName: spec.glyph)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.primary.opacity(Token.Ink.tertiary))
+                    .frame(width: 13)
+            }
             Text(spec.label)
                 .font(Token.Text.label)
                 .foregroundStyle(.primary.opacity(Token.Ink.secondary))
@@ -486,7 +610,9 @@ private struct Row: View {
                 Text(value)
                     .font(Token.Text.value)
                     .monospacedDigit()
-                    .foregroundStyle(.primary.opacity(Token.Ink.tertiary))
+                    .foregroundStyle(spec.bind?.boundTo != nil
+                                     ? Token.accent
+                                     : .primary.opacity(Token.Ink.tertiary))
                     .lineLimit(1)
                     .fixedSize()
             }

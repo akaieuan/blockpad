@@ -41,7 +41,7 @@ struct RootView: View {
                                         top: 56,
                                         left: store.inspectorOpen ? layout.inspectorWidth + 40 : 78,
                                         bottom: 68,
-                                        right: store.libraryOpen ? 290 : 24),
+                                        right: store.libraryOpen || store.variablesOpen ? 290 : 24),
                                     onSend: send)
                     .ignoresSafeArea()
 
@@ -58,15 +58,23 @@ struct RootView: View {
 
                 inspectorColumn(layout, availableRailHeight: geometry.size.height - 54 - 44 - 88)
 
-                if store.libraryOpen {
+                if store.libraryOpen || store.variablesOpen {
                     HStack {
                         Spacer()
-                        LibraryPanel(store: store,
-                                     maxHeight: max(220, geometry.size.height - 150),
-                                     canvas: { CanvasHost.shared })
-                            .padding(.trailing, 12)
-                            .padding(.top, 58)
-                            .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
+                        Group {
+                            if store.libraryOpen {
+                                LibraryPanel(store: store,
+                                             maxHeight: max(220, geometry.size.height - 150),
+                                             canvas: { CanvasHost.shared })
+                            } else {
+                                VariablesPanel(store: store,
+                                               maxHeight: max(220, geometry.size.height - 150),
+                                               canvas: { CanvasHost.shared })
+                            }
+                        }
+                        .padding(.trailing, 12)
+                        .padding(.top, 58)
+                        .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .topTrailing)))
                     }
                 }
 
@@ -107,6 +115,7 @@ struct RootView: View {
         }
         .animation(.easeOut(duration: 0.16), value: store.toast)
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: store.libraryOpen)
+        .animation(.spring(response: 0.28, dampingFraction: 0.85), value: store.variablesOpen)
         .animation(.spring(response: 0.28, dampingFraction: 0.85), value: store.inspectorOpen)
     }
 
@@ -156,7 +165,9 @@ struct RootView: View {
             // permission, no activation, nothing to grant.
             store.flash(SketchExport.copyToPasteboard(store.blocks, mode: mode,
                                                       options: store.renderOptions,
-                                                      template: store.template))
+                                                      template: store.template,
+                                                      collections: store.collections,
+                                                      variableMode: store.mode))
             return
         }
 
@@ -166,7 +177,8 @@ struct RootView: View {
         let strategy = AppAdapters().resolve(shape: mode.shape,
                                              bundleID: target?.bundleIdentifier)
 
-        let tree = SketchExport.tree(store.blocks, template: store.template)
+        let tree = SketchExport.tree(store.blocks, template: store.template,
+                                     collections: store.collections, mode: store.mode)
         var image: Data?
         var pathLine: String?
 

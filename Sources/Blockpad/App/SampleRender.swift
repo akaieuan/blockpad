@@ -92,14 +92,28 @@ extension SampleRender {
             print("could not decode a scene from \(inputPath)"); return
         }
         let theme = CanvasTheme.all.first { $0.name == doc.theme } ?? .paper
-        let options = RenderOptions(theme: theme, sketchy: doc.sketchy ?? false)
+        let collections = doc.collections ?? []
+        let mode = doc.mode ?? collections.first?.defaultMode ?? "Default"
+        // A bound paper resolves the same way it does on the canvas, or a dark
+        // mode would render its blocks on a light page.
+        var paper = theme
+        if let id = doc.paperVariableID,
+           let value = VariableResolver.resolve(VariableBinding(property: .fill, variableID: id),
+                                                in: collections, mode: mode),
+           let hex = value.colourHex, let c = HexColor.components(hex) {
+            paper = CanvasTheme(name: theme.name, background: RGBA(c.r, c.g, c.b, c.a),
+                                isDark: (HexColor.relativeLuminance(hex) ?? 1) < 0.18)
+        }
+        let options = RenderOptions(theme: paper, sketchy: doc.sketchy ?? false,
+                                    collections: collections, mode: mode)
         guard let png = SketchExport.renderPNGData(doc.blocks, options: options, scale: 2) else {
             print("render failed"); return
         }
         try? png.write(to: URL(fileURLWithPath: outputPath))
         print("wrote \(outputPath)  (\(doc.blocks.count) blocks)")
         // Same template the app would send, or this dump disagrees with Copy.
-        print(SketchExport.tree(doc.blocks, template: StyleTemplate.named(doc.template)))
+        print(SketchExport.tree(doc.blocks, template: StyleTemplate.named(doc.template),
+                                collections: collections, mode: mode))
     }
 }
 

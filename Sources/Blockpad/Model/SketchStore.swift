@@ -37,6 +37,9 @@ struct SketchDocument: Codable {
     var recentColors: [String]?
     var snapping: Bool?
     var template: String?
+    var collections: [VariableCollection]?
+    var mode: String?
+    var paperVariableID: UUID?
 }
 
 /// Canvas contents persist across hide/show and across app restart (§2).
@@ -55,6 +58,7 @@ final class SketchStore: ObservableObject {
     @Published var sketchy: Bool = false { didSet { scheduleSave() } }
     @Published var toast: String?
     @Published var libraryOpen: Bool = false
+    @Published var variablesOpen: Bool = false
     @Published var inspectorOpen: Bool = true
     /// Alignment guides while dragging.
     @Published var snapping: Bool = true { didSet { scheduleSave() } }
@@ -64,27 +68,98 @@ final class SketchStore: ObservableObject {
 
     var template: StyleTemplate? { StyleTemplate.named(templateID) }
 
+    /// Named values, and which mode the canvas is showing.
+    @Published var collections: [VariableCollection] = [] { didSet { scheduleSave() } }
+    @Published var mode: String = "Default" { didSet { scheduleSave() } }
+    /// The canvas background, optionally bound to a colour variable.
+    ///
+    /// Without this, switching to Dark restyles every block and leaves the page
+    /// behind them light — which is not a dark theme, it is a broken one. The
+    /// paper is not a block, so it cannot carry a normal binding; it gets its
+    /// own.
+    @Published var paperVariableID: UUID? { didSet { scheduleSave() } }
+
+    /// The theme actually used to draw, with a bound paper resolved into it.
+    ///
+    /// Returning a real CanvasTheme rather than a bare colour means everything
+    /// downstream keeps working untouched — including `inkAdjusted`, which flips
+    /// near-black ink to off-white by luminance, so text stays legible on a dark
+    /// paper without anyone binding it.
+    var effectiveTheme: CanvasTheme { paperTheme(in: mode) }
+
+    /// The paper as it stands in a given mode. Taking a mode rather than reading
+    /// the current one is what lets the rule check ask about Dark while Light is
+    /// on screen.
+    func paperTheme(in mode: String) -> CanvasTheme {
+        guard let id = paperVariableID,
+              let value = VariableResolver.resolve(
+                  VariableBinding(property: .fill, variableID: id),
+                  in: collections, mode: mode),
+              let hex = value.colourHex,
+              let c = HexColor.components(hex) else { return theme }
+        // Same relative-luminance test the contrast checker uses, so "is this
+        // paper dark" is answered one way in the whole app.
+        let luminance = HexColor.relativeLuminance(hex) ?? 1
+        return CanvasTheme(name: theme.name,
+                           background: RGBA(c.r, c.g, c.b, c.a),
+                           isDark: luminance < 0.18)
+    }
+
+    /// Every mode any collection defines, in order, deduplicated. Drives the
+    /// switcher, which is per-canvas rather than per-collection: switching to
+    /// "Dark" should switch everything that has a Dark.
+    var availableModes: [String] {
+        var seen: Set<String> = []
+        return collections.flatMap(\.modes).filter { seen.insert($0).inserted }
+    }
+
     /// What the active template flags, if it checks anything. Recomputed on
     /// read rather than cached — the scenes are small and a stale warning is
     /// worse than a recomputed one.
+    ///
+    /// Every mode is checked, not just the one on screen. A palette that passes
+    /// in Light and fails in Dark is the bug this is for, and it is invisible
+    /// from the mode you happen to be looking at.
     var violations: [Violation] {
         guard let template, template.isChecked else { return [] }
-        return template.violations(for: blocks.compactMap(ruleSubject))
+        let modes = availableModes
+        guard modes.count > 1 else {
+            return template.violations(for: blocks.compactMap { ruleSubject($0, mode: mode) })
+        }
+        return template.violations(across: modes.map { name in
+            (mode: name, subjects: blocks.compactMap { ruleSubject($0, mode: name) })
+        })
     }
 
-    /// Maps a block onto what the rules can judge. A block's stroke is also its
-    /// label colour, and a label sits on the block's fill when it has one and on
-    /// the paper when it does not.
-    private func ruleSubject(_ block: Block) -> RuleSubject? {
-        guard block.kind.takesText else { return nil }
+    /// Maps a block onto what the rules can judge, as it resolves in one mode.
+    ///
+    /// A block's stroke is also its label colour, and a label sits on the
+    /// block's fill when it has one and on the paper when it does not.
+    private func ruleSubject(_ raw: Block, mode: String) -> RuleSubject? {
+        guard raw.kind.takesText else { return nil }
+        // Judge what the mode shows, not what the block stores. A bound fill is
+        // a different colour in every mode, which is the entire point.
+        let block = BlockRenderer.resolved(raw, options: RenderOptions(
+            theme: theme, sketchy: sketchy, collections: collections, mode: mode))
+        let paper = paperTheme(in: mode)
         let bounds = block.bounds
         return RuleSubject(id: block.id,
-                           foreground: block.stroke,
-                           background: block.fill ?? theme.hex,
+                           foreground: renderedInk(block.stroke, on: paper,
+                                                   hasFill: block.fill != nil),
+                           background: block.fill ?? paper.hex,
                            size: bounds.size,
                            fontSize: Double(BlockRenderer.fontSize(for: block)),
                            carriesLabel: !block.text.isEmpty,
                            couldBeControl: block.kind.takesFill)
+    }
+
+    /// The ink actually drawn. On a dark paper the renderer flips near-black
+    /// strokes to off-white, so checking the stored colour would report contrast
+    /// failures that are not on the screen — and hide the ones that are.
+    private func renderedInk(_ hex: String, on paper: CanvasTheme, hasFill: Bool) -> String {
+        guard !hasFill else { return hex }
+        guard let srgb = paper.inkAdjusted(Palette.color(hex)).usingColorSpace(.sRGB) else { return hex }
+        return HexColor.string(r: srgb.redComponent, g: srgb.greenComponent, b: srgb.blueComponent)
     }
 
     /// Adopts a template's defaults for blocks drawn from now on. Never
@@ -104,7 +179,10 @@ final class SketchStore: ObservableObject {
         flash("\(template.name)")
     }
 
-    var renderOptions: RenderOptions { RenderOptions(theme: theme, sketchy: sketchy) }
+    var renderOptions: RenderOptions {
+        RenderOptions(theme: effectiveTheme, sketchy: sketchy,
+                      collections: collections, mode: mode)
+    }
 
     var pan: CGPoint = .zero { didSet { scheduleSave() } }
     var zoom: CGFloat = 1 { didSet { scheduleSave() } }
@@ -189,7 +267,10 @@ final class SketchStore: ObservableObject {
         let doc = SketchDocument(blocks: blocks, frameSize: frameSize,
                                  pan: pan, zoom: zoom, theme: theme.name, sketchy: sketchy,
                                  recentColors: recentColors, snapping: snapping,
-                                 template: templateID)
+                                 template: templateID,
+                                 collections: collections.isEmpty ? nil : collections,
+                                 mode: collections.isEmpty ? nil : mode,
+                                 paperVariableID: paperVariableID)
         do {
             try JSONEncoder().encode(doc).write(to: Self.storeURL, options: .atomic)
         } catch {
@@ -209,5 +290,8 @@ final class SketchStore: ObservableObject {
         snapping = doc.snapping ?? true
         recentColors = doc.recentColors ?? []
         templateID = doc.template
+        collections = doc.collections ?? []
+        mode = doc.mode ?? collections.first?.defaultMode ?? "Default"
+        paperVariableID = doc.paperVariableID
     }
 }

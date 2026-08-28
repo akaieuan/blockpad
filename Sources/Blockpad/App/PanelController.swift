@@ -73,9 +73,19 @@ final class PanelController {
         // The chrome follows the canvas, not the system. A light paper canvas
         // under dark-mode glass is exactly the black-bar problem the floating
         // islands were meant to solve.
-        store.$theme
-            .sink { [weak panel] theme in
-                panel?.appearance = NSAppearance(named: theme.isDark ? .darkAqua : .aqua)
+        // Reading `effectiveTheme` rather than the published value, because a
+        // paper bound to a variable is dark by mode rather than by name — and
+        // light glass over a dark canvas is the same black-bar problem the
+        // floating islands were meant to solve.
+        Publishers.Merge4(store.$theme.map { _ in () },
+                          store.$collections.map { _ in () },
+                          store.$mode.map { _ in () },
+                          store.$paperVariableID.map { _ in () })
+            .receive(on: RunLoop.main)
+            .sink { [weak panel, weak store] in
+                guard let store else { return }
+                panel?.appearance = NSAppearance(
+                    named: store.effectiveTheme.isDark ? .darkAqua : .aqua)
             }
             .store(in: &cancellables)
     }

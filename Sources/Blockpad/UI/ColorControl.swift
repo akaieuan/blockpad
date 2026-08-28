@@ -11,6 +11,10 @@ struct ColorControl: View {
     let presets: [ColorPreset]
     let recents: [String]
     var allowsNone: Bool = false
+    /// Chips shown in the row itself. Zero leaves just the picker button, for
+    /// rows where the same four presets repeated down a list would read as
+    /// decoration rather than as a shortcut.
+    var inlineCount: Int = 4
     let onChange: (String?) -> Void
 
     @State private var open = false
@@ -19,16 +23,17 @@ struct ColorControl: View {
 
     private let columns = [GridItem(.adaptive(minimum: 18), spacing: 6)]
 
-    /// How many presets sit in the row itself. Four is what fits beside a label
-    /// in a 172pt rail without the row wrapping.
-    private static let inlineCount = 4
+    /// How many chips actually fit, once the "none" slot has taken one.
+    private var inlineShown: Int {
+        max(0, allowsNone ? inlineCount - 1 : inlineCount)
+    }
 
     var body: some View {
         HStack(spacing: 3.5) {
-            if allowsNone {
+            if allowsNone, inlineCount > 0 {
                 inlineChip(nil)
             }
-            ForEach(presets.prefix(allowsNone ? Self.inlineCount - 1 : Self.inlineCount)) { preset in
+            ForEach(presets.prefix(inlineShown)) { preset in
                 inlineChip(preset.hex, name: preset.name)
             }
 
@@ -60,7 +65,10 @@ struct ColorControl: View {
 
     /// True when the colour came from the picker rather than a visible chip.
     private var isCustom: Bool {
-        let inline = presets.prefix(allowsNone ? Self.inlineCount - 1 : Self.inlineCount).map(\.hex)
+        // With no chips beside it there is nothing for the ring to disagree
+        // with, and a ring on every row is decoration.
+        guard inlineShown > 0 else { return false }
+        let inline = presets.prefix(inlineShown).map(\.hex)
         if current == nil { return !allowsNone }
         return !inline.contains(current!)
     }

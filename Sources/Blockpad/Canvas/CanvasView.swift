@@ -36,6 +36,11 @@ final class CanvasView: NSView {
         store.$selection.sink { [weak self] _ in self?.needsDisplay = true }.store(in: &cancellables)
         store.$theme.sink { [weak self] _ in self?.needsDisplay = true }.store(in: &cancellables)
         store.$sketchy.sink { [weak self] _ in self?.needsDisplay = true }.store(in: &cancellables)
+        // Retinting the whole canvas is what a mode switch *is*, so both the
+        // values and the mode showing them have to reach the drawing.
+        store.$collections.sink { [weak self] _ in self?.needsDisplay = true }.store(in: &cancellables)
+        store.$mode.sink { [weak self] _ in self?.needsDisplay = true }.store(in: &cancellables)
+        store.$paperVariableID.sink { [weak self] _ in self?.needsDisplay = true }.store(in: &cancellables)
         store.$tool.sink { [weak self] _ in
             guard let self else { return }
             self.needsDisplay = true
@@ -765,6 +770,7 @@ final class CanvasView: NSView {
         // Progressive escape: drop the tool first, hide the panel last, so an
         // accidental Esc never costs you the canvas.
         if store.libraryOpen { store.libraryOpen = false }
+        else if store.variablesOpen { store.variablesOpen = false }
         else if store.tool != .select { store.tool = .select }
         else if !store.selection.isEmpty { store.selection = [] }
         else { PanelController.shared?.hide() }
@@ -857,6 +863,13 @@ final class CanvasView: NSView {
     }
 
     // MARK: - Undo
+
+    /// Replaces every block, undoably.
+    ///
+    /// For operations that are not edits to a selection: deleting a variable
+    /// rewrites the literals of everything bound to it, and that has to be
+    /// undoable like any other change to the drawing.
+    func replaceAll(_ blocks: [Block], name: String) { apply(blocks, name: name) }
 
     private func apply(_ blocks: [Block], name: String) {
         let before = store.blocks

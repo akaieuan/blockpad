@@ -133,10 +133,17 @@ enum SketchExport {
     /// Serializes the scene graph to text locally, no inference. Parenthood is
     /// inferred from containment because that is how you actually draw — you put
     /// a box inside a frame, you don't declare a relationship.
-    static func tree(_ blocks: [Block], template: StyleTemplate? = nil) -> String {
-        let visible = blocks.filter { $0.kind != .redact }
-        guard !visible.isEmpty else { return "" }
+    static func tree(_ blocks: [Block], template: StyleTemplate? = nil,
+                     collections: [VariableCollection] = [], mode: String = "Default") -> String {
+        let drawn = blocks.filter { $0.kind != .redact }
+        guard !drawn.isEmpty else { return "" }
 
+        let options = RenderOptions(collections: collections, mode: mode)
+        // The literals in the tree must be the values the canvas is actually
+        // showing, so blocks are resolved before anything is measured or
+        // grouped — otherwise a run of identically-bound boxes would not
+        // collapse, because their unresolved literals still differ.
+        let visible = drawn.map { BlockRenderer.resolved($0, options: options) }
         let roots = visible.filter { parent(of: $0, in: visible) == nil }
         var lines: [String] = []
         var signatures: [UUID: String] = [:]
@@ -145,7 +152,7 @@ enum SketchExport {
         // never leaks wherever on the infinite canvas you happened to be.
         let contentOrigin = visible.map(\.bounds).reduce(CGRect.null) { $0.union($1) }.origin
         emitSiblings(roots, in: visible, signatures: signatures, depth: 0,
-                     contentOrigin: contentOrigin, into: &lines)
+                     contentOrigin: contentOrigin, collections: collections, into: &lines)
 
         // A template with rules leads the tree, because it changes how
         // everything below it should be read: an agent told `accessible` should
@@ -154,6 +161,10 @@ enum SketchExport {
         if let template, template.isChecked {
             lines.insert("template \(template.id)  # \(template.summary)", at: 0)
         }
+        // The token table leads, because it changes how every value below is
+        // read: an agent seeing `$surface` should emit a custom property, not a
+        // literal repeated fourteen times.
+        lines.insert(contentsOf: collections.treeHeader(), at: 0)
         return lines.joined(separator: "\n")
     }
 
@@ -163,6 +174,7 @@ enum SketchExport {
     private static func emitSiblings(_ siblings: [Block], in blocks: [Block],
                                      signatures: [UUID: String], depth: Int,
                                      contentOrigin: CGPoint,
+                                     collections: [VariableCollection],
                                      into lines: inout [String]) {
         let list = ordered(siblings)
         var i = 0
@@ -172,7 +184,8 @@ enum SketchExport {
             while i + run < list.count, signatures[list[i + run].id] == sig { run += 1 }
             let group = Array(list[i..<(i + run)])
             emit(list[i], in: blocks, signatures: signatures, depth: depth,
-                 group: group, contentOrigin: contentOrigin, into: &lines)
+                 group: group, contentOrigin: contentOrigin,
+                 collections: collections, into: &lines)
             i += run
         }
     }
@@ -216,6 +229,7 @@ enum SketchExport {
 
     private static func emit(_ block: Block, in blocks: [Block], signatures: [UUID: String],
                              depth: Int, group: [Block], contentOrigin: CGPoint,
+                             collections: [VariableCollection],
                              into lines: inout [String]) {
         let indent = String(repeating: "  ", count: depth)
         let r = block.rect.standardized
@@ -274,11 +288,21 @@ enum SketchExport {
         // Hex, not a palette name. `#55677A` is a value the receiving agent can
         // paste into CSS; `[slate]` was a lookup it could not perform. Only
         // emitted when it differs from the default, to keep the line short.
-        if block.stroke != Palette.defaultStroke {
-            parts.append("stroke \(block.stroke)")
+        // A bound property prints its token *and* its literal. The token says
+        // what the value means; the literal keeps the line usable by anything
+        // that ignores the table — the same reason colours are hex rather than
+        // palette names.
+        func labelled(_ property: BoundProperty, _ literal: String) -> String {
+            guard let binding = block.binding(for: property),
+                  let token = VariableResolver.token(binding, in: collections) else { return literal }
+            return "\(token) \(literal)"
+        }
+
+        if block.stroke != Palette.defaultStroke || block.binding(for: .stroke) != nil {
+            parts.append("stroke \(labelled(.stroke, block.stroke))")
         }
         if let fill = block.fill, block.fillStyle != .none {
-            parts.append("fill \(fill)")
+            parts.append("fill \(labelled(.fill, fill))")
         }
         if abs(block.cornerRadius - 10) > 0.5, !block.kind.isLinear {
             parts.append("r\(Int(block.cornerRadius.rounded()))")
@@ -297,7 +321,7 @@ enum SketchExport {
 
         let children = blocks.filter { parent(of: $0, in: blocks)?.id == block.id }
         emitSiblings(children, in: blocks, signatures: signatures, depth: depth + 1,
-                     contentOrigin: contentOrigin, into: &lines)
+                     contentOrigin: contentOrigin, collections: collections, into: &lines)
     }
 
     /// Where the block sits inside its parent, in words the model can act on.
@@ -331,7 +355,9 @@ enum SketchExport {
     @discardableResult
     static func copyToPasteboard(_ blocks: [Block], mode: PayloadMode,
                                  options: RenderOptions = RenderOptions(),
-                                 template: StyleTemplate? = nil) -> String {
+                                 template: StyleTemplate? = nil,
+                                 collections: [VariableCollection] = [],
+                                 variableMode: String = "Default") -> String {
         guard !blocks.isEmpty else { return "Nothing to copy" }
 
         let pb = NSPasteboard.general
@@ -340,7 +366,7 @@ enum SketchExport {
         // One item carrying both representations lets the receiving app pick the
         // richest form it supports — editors take the image, terminals the text.
         let item = NSPasteboardItem()
-        let text = tree(blocks, template: template)
+        let text = tree(blocks, template: template, collections: collections, mode: variableMode)
 
         switch mode {
         case .tree:
