@@ -110,23 +110,23 @@ Three properties earn their place: the name says intent, the literal keeps it us
 
 ## Tasks
 
-- [ ] **1. `BlockpadKit/Variables.swift`** — the types above plus `resolve`. Tests: a variable resolves per mode; a missing mode falls back to the collection's first mode rather than returning nil; a deleted variable resolves to nil and the caller keeps its literal; duplicate names within a collection are rejected; names normalise (trimmed, no `$`, no spaces).
+- [x] **1. `BlockpadKit/Variables.swift`** — the types above plus `resolve`. Tests: a variable resolves per mode; a missing mode falls back to the collection's first mode rather than returning nil; a deleted variable resolves to nil and the caller keeps its literal; duplicate names within a collection are rejected; names normalise (trimmed, no `$`, no spaces).
 
-- [ ] **2. Token emission** — `Variable.token` (`$surface`) and a `VariableCollection.treeHeader` producing the block above. Tests: a collection with one mode omits the mode list; no collections emits nothing at all.
+- [x] **2. Token emission** — `Variable.token` (`$surface`) and a `VariableCollection.treeHeader` producing the block above. Tests: a collection with one mode omits the mode list; no collections emits nothing at all.
 
-- [ ] **3. `Block.bindings`** — optional array, `Codable` with `decodeIfPresent`. Test that a pre-variables scene decodes with none and its tree is byte-identical.
+- [x] **3. `Block.bindings`** — optional array, `Codable` with `decodeIfPresent`. Test that a pre-variables scene decodes with none and its tree is byte-identical.
 
-- [ ] **4. Store** — collections persisted with the scene, plus `activeMode`. Changing mode triggers a redraw and nothing else.
+- [x] **4. Store** — collections persisted with the scene, plus `activeMode`. Changing mode triggers a redraw and nothing else.
 
-- [ ] **5. Resolution in the renderer** — a bound property reads through `resolve` at draw time, falling back to the block's own literal when the variable is gone.
+- [x] **5. Resolution in the renderer** — a bound property reads through `resolve` at draw time, falling back to the block's own literal when the variable is gone.
 
-- [ ] **6. Inspector** — a bind affordance on the rows that support it (Stroke, Fill, Radius, Weight, Text), showing the token name when bound. Plus a Variables panel to create, rename, retype and delete, and a mode switcher in the Canvas section.
+- [x] **6. Inspector** — a bind affordance on the rows that support it (Stroke, Fill, Radius, Weight, Text), showing the token name when bound. Plus a Variables panel to create, rename, retype and delete, and a mode switcher in the Canvas section.
 
-- [ ] **7. Export** — the header, and `$name literal` inline for bound properties. Test that an unbound scene is unchanged.
+- [x] **7. Export** — the header, and `$name literal` inline for bound properties. Test that an unbound scene is unchanged.
 
-- [ ] **8. Accessible across modes** — extend `StyleTemplate.violations` to take a set of mode-resolved subjects and report the failing mode in the message ("Contrast 3.1:1 in Dark, needs 4.5:1"). Tests: a pair passing in Light and failing in Dark is reported once, naming Dark.
+- [x] **8. Accessible across modes** — extend `StyleTemplate.violations` to take a set of mode-resolved subjects and report the failing mode in the message ("Contrast 3.1:1 in Dark, needs 4.5:1"). Tests: a pair passing in Light and failing in Dark is reported once, naming Dark.
 
-- [ ] **9. Verify by hand** — build a two-mode palette, bind a form to it, switch modes, confirm the canvas restyles and the tree carries both. Paste it and check the agent emits CSS custom properties rather than literals.
+- [x] **9. Verify by hand** — build a two-mode palette, bind a form to it, switch modes, confirm the canvas restyles and the tree carries both. Paste it and check the agent emits CSS custom properties rather than literals.
 
 ---
 

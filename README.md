@@ -290,6 +290,49 @@ expansion — not a brightness average, which is wrong across the whole midrange
 exactly where people pick colours. It is tested against the published boundary:
 `#767676` on white clears 4.5:1 at 4.54, `#777777` does not.
 
+**It checks every mode, not the one on screen.** See Variables below — a palette
+that passes in Light and fails in Dark is the bug this is for, and it is
+invisible from the mode you happen to be looking at. The warning names the mode
+that fails, and only when the mode is the difference:
+
+```
+Contrast 2.6:1 in Dark, needs 4.5:1
+```
+
+### Variables
+
+A colour or a number can be named once and used everywhere, and the payload
+hands the agent the name **and** the value:
+
+```
+variables Tokens [Light, Dark]
+  $accent   #F97316  #F97316
+  $ink      #14181F  #F4F5F7
+  $surface  #FFFFFF  #14181F
+Box 220x60  @0,50  "Surface"  stroke $ink #14181F  fill $surface #FFFFFF  r8
+Box 220x60  @260,50  "Accent"  stroke $ink #14181F  fill $accent #F97316  r8
+```
+
+The literal is not redundant — it is what makes the token safe to add. An agent
+that ignores the table still gets a working colour, exactly as an agent that
+ignores a plane still gets a correct flat layout. A bare `$surface` would be a
+lookup the receiver cannot perform, which is the objection that killed palette
+names in the first place.
+
+**Modes are where the leverage is.** A collection has modes and every variable
+has one value per mode, so one drawing carries light and dark at the same time.
+The canvas shows one mode; the payload carries all of them. Switching restyles
+the drawing — including the paper, which can be bound like anything else — so
+you can look at the dark version instead of imagining it.
+
+Binding lives on a property row's leading glyph in the inspector, and a bound
+row shows its token where its value would be. Deleting a variable freezes the
+colour into everything that used it, undoably: losing the name must not lose the
+colour.
+
+No aliases, no scoping rules, no library publishing. If this starts needing
+search and filtering it has stopped being a sketchpad's token list.
+
 ### Styling
 
 Colour is arbitrary hex, not a fixed palette. Four presets stay inline in each
@@ -329,7 +372,14 @@ Other entry points:
 .build/debug/Blockpad --render-sample ./out    # render the example scene + tree
 .build/debug/Blockpad --seed-demo              # load the example into the app
 .build/debug/Blockpad --seed-preset storyboard # place one component preset
+.build/debug/Blockpad --render-chrome ./out.png # render the inspector + panels
 ```
+
+`--render-chrome` is the chrome's equivalent of `--render-sample`: a Mac app has
+no simulator, and checking the inspector by screenshotting a live window stops
+working the moment screen recording is unavailable — and cannot show a state you
+have not clicked your way into. The glass renders flat because it samples a
+desktop that is not there; everything else is what the app draws.
 
 The icon is drawn in Core Graphics rather than stored as an asset, so it cannot
 drift from the palette.
