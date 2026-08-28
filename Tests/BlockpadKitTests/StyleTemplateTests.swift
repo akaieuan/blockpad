@@ -118,6 +118,92 @@ final class StyleTemplateTests: XCTestCase {
         XCTAssertEqual(v.first?.blockID, s.id)
     }
 
+    // MARK: - Across modes
+
+    /// The bug this exists for: a palette that reads fine in Light and fails in
+    /// Dark. Checking only the mode on screen cannot see it.
+    func testFailureInOneModeIsReportedOnceNamingThatMode() {
+        let id = UUID()
+        func s(_ fg: String, _ bg: String) -> RuleSubject {
+            RuleSubject(id: id, foreground: fg, background: bg,
+                        size: CGSize(width: 120, height: 48), fontSize: 16,
+                        carriesLabel: true, couldBeControl: true)
+        }
+        let found = StyleTemplate.accessible.violations(across: [
+            (mode: "Light", subjects: [s("#14181F", "#FFFFFF")]),
+            (mode: "Dark", subjects: [s("#6B6B6B", "#3A3A3A")])
+        ])
+        XCTAssertEqual(found.count, 1)
+        XCTAssertEqual(found.first?.mode, "Dark")
+        XCTAssertTrue(found.first?.message.contains("in Dark") == true,
+                      found.first?.message ?? "")
+    }
+
+    /// Failing everywhere is not a mode problem, so naming a mode would imply
+    /// the others were fine.
+    func testFailureInEveryModeNamesNoMode() {
+        let id = UUID()
+        func s(_ bg: String) -> RuleSubject {
+            RuleSubject(id: id, foreground: "#AAAAAA", background: bg,
+                        size: CGSize(width: 120, height: 48), fontSize: 16,
+                        carriesLabel: true, couldBeControl: true)
+        }
+        let found = StyleTemplate.accessible.violations(across: [
+            (mode: "Light", subjects: [s("#FFFFFF")]),
+            (mode: "Dark", subjects: [s("#BBBBBB")])
+        ])
+        XCTAssertEqual(found.count, 1)
+        XCTAssertNil(found.first?.mode)
+        XCTAssertFalse(found.first?.message.contains(" in ") == true,
+                       found.first?.message ?? "")
+    }
+
+    /// One block breaking two rules is two findings, not one — they need
+    /// different fixes.
+    func testDifferentRulesOnOneBlockStaySeparate() {
+        let id = UUID()
+        let s = RuleSubject(id: id, foreground: "#AAAAAA", background: "#FFFFFF",
+                            size: CGSize(width: 120, height: 20), fontSize: 16,
+                            carriesLabel: true, couldBeControl: true)
+        let found = StyleTemplate.accessible.violations(across: [
+            (mode: "Light", subjects: [s]), (mode: "Dark", subjects: [s])
+        ])
+        XCTAssertEqual(Set(found.map(\.rule)).count, 2)
+    }
+
+    /// The number in the message has to be the one that must move, so the worst
+    /// reading wins even when a milder mode is checked first.
+    func testWorstReadingIsTheOneReported() {
+        let id = UUID()
+        func s(_ fg: String) -> RuleSubject {
+            RuleSubject(id: id, foreground: fg, background: "#FFFFFF",
+                        size: CGSize(width: 120, height: 48), fontSize: 16,
+                        carriesLabel: true, couldBeControl: true)
+        }
+        let found = StyleTemplate.accessible.violations(across: [
+            (mode: "Light", subjects: [s("#949494")]),
+            (mode: "Dark", subjects: [s("#C4C4C4")])
+        ])
+        XCTAssertEqual(found.count, 1)
+        XCTAssertEqual(found.first?.actual ?? 99,
+                       HexColor.contrastRatio("#C4C4C4", "#FFFFFF")!, accuracy: 0.001)
+    }
+
+    /// A single mode must behave exactly as it did before this existed.
+    func testOneModeIsUnchanged() {
+        let s = subject(fg: "#AAAAAA")
+        let across = StyleTemplate.accessible.violations(across: [(mode: "Default", subjects: [s])])
+        XCTAssertEqual(across, StyleTemplate.accessible.violations(for: [s]))
+        XCTAssertNil(across.first?.mode)
+    }
+
+    func testUncheckedTemplateFindsNothingAcrossModes() {
+        XCTAssertTrue(StyleTemplate.modernMinimal.violations(across: [
+            (mode: "Light", subjects: [subject(fg: "#AAAAAA")]),
+            (mode: "Dark", subjects: [subject(fg: "#AAAAAA")])
+        ]).isEmpty)
+    }
+
     // MARK: - Lookup
 
     func testTemplatesResolveByID() {

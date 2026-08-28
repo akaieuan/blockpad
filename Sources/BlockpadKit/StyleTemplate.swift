@@ -51,7 +51,7 @@ public struct StyleDefaults: Equatable, Sendable {
 }
 
 /// A rule a block can break.
-public enum Rule: Equatable, Sendable {
+public enum Rule: Hashable, Sendable {
     /// WCAG contrast between a block's label and what it sits on.
     case minContrast(Double)
     /// Shortest side of anything carrying a label — the closest this app gets
@@ -95,17 +95,35 @@ public struct Violation: Equatable, Sendable {
     public let rule: Rule
     public let actual: Double
     public let required: Double
+    /// The mode this reading came from, named only when it is the difference —
+    /// see `violations(across:)`.
+    public let mode: String?
+
+    public init(blockID: UUID, rule: Rule, actual: Double, required: Double,
+                mode: String? = nil) {
+        self.blockID = blockID
+        self.rule = rule
+        self.actual = actual
+        self.required = required
+        self.mode = mode
+    }
 
     public var message: String {
+        let when = mode.map { " in \($0)" } ?? ""
         switch rule {
         case .minContrast:
-            return String(format: "Contrast %.1f:1, needs %.1f:1", actual, required)
+            return "Contrast \(String(format: "%.1f", actual)):1\(when), needs "
+                + "\(String(format: "%.1f", required)):1"
         case .minTapTarget:
-            return "Target \(Int(actual))pt, needs \(Int(required))pt"
+            return "Target \(Int(actual))pt\(when), needs \(Int(required))pt"
         case .minFontSize:
-            return "Text \(Int(actual))pt, needs \(Int(required))pt"
+            return "Text \(Int(actual))pt\(when), needs \(Int(required))pt"
         }
     }
+
+    /// Which of two readings of the same rule is the one worth reporting. Every
+    /// rule is a floor, so the smaller number is always the worse failure.
+    func isWorse(than other: Violation) -> Bool { actual < other.actual }
 }
 
 extension StyleTemplate {
@@ -146,6 +164,53 @@ extension StyleTemplate {
     public func violations(for subjects: [RuleSubject]) -> [Violation] {
         guard isChecked else { return [] }
         return subjects.flatMap { violations(for: $0) }
+    }
+
+    /// What the drawing breaks, checked in every mode at once.
+    ///
+    /// The classic shipped bug is a palette that passes in light and fails in
+    /// dark, and nothing else in this app can see it: the token table holds
+    /// every mode's value, so the same subject can be resolved in each mode and
+    /// the worst reading reported.
+    ///
+    /// One violation per block per rule, never one per mode — the same button
+    /// listed three times is a list nobody reads. The mode is named only when it
+    /// is the difference: a block that fails everywhere fails for reasons that
+    /// have nothing to do with modes, and "in Dark" would imply Light was fine.
+    public func violations(across modes: [(mode: String, subjects: [RuleSubject])]) -> [Violation] {
+        guard isChecked, !modes.isEmpty else { return [] }
+        guard modes.count > 1 else { return violations(for: modes[0].subjects) }
+
+        struct Key: Hashable { let block: UUID; let rule: Rule }
+        var worst: [Key: Violation] = [:]
+        var failures: [Key: Int] = [:]
+
+        for (mode, subjects) in modes {
+            for subject in subjects {
+                for violation in violations(for: subject) {
+                    let key = Key(block: subject.id, rule: violation.rule)
+                    failures[key, default: 0] += 1
+                    let candidate = Violation(blockID: violation.blockID,
+                                              rule: violation.rule,
+                                              actual: violation.actual,
+                                              required: violation.required,
+                                              mode: mode)
+                    if let held = worst[key], !candidate.isWorse(than: held) { continue }
+                    worst[key] = candidate
+                }
+            }
+        }
+
+        return worst.map { key, violation -> Violation in
+            guard failures[key] == modes.count else { return violation }
+            return Violation(blockID: violation.blockID, rule: violation.rule,
+                             actual: violation.actual, required: violation.required)
+        }
+        // Dictionaries have no order and a warning list that reshuffles itself
+        // between redraws is unusable.
+        .sorted { $0.blockID.uuidString == $1.blockID.uuidString
+            ? $0.message < $1.message
+            : $0.blockID.uuidString < $1.blockID.uuidString }
     }
 }
 
