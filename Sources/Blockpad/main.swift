@@ -27,6 +27,12 @@ if let index = arguments.firstIndex(of: "--render-scene") {
     exit(0)
 }
 
+if let index = arguments.firstIndex(of: "--render-chrome") {
+    let output = index + 1 < arguments.count ? arguments[index + 1] : "./build/chrome.png"
+    MainActor.assumeIsolated { ChromeRender.run(outputPath: output) }
+    exit(0)
+}
+
 // Loads a known scene into the real store, so documentation screenshots show
 // the app doing its job rather than an empty canvas.
 // Places one component preset into the live store, so a scaffold can be
